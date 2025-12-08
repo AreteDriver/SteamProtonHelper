@@ -1,5 +1,9 @@
 # Steam Proton Helper 🎮
 
+[![CI](https://github.com/AreteDriver/SteamProtonHelper/workflows/CI/badge.svg)](https://github.com/AreteDriver/SteamProtonHelper/actions)
+[![Python 3.6+](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A comprehensive Linux tool to help setup Steam and Proton for gaming. This application checks dependencies, verifies installations, and helps troubleshoot common issues to get you gaming faster!
 
 ## Features

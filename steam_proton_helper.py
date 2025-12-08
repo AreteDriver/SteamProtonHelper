@@ -252,11 +252,28 @@ class DependencyChecker:
                 try:
                     entries = os.listdir(path)
                     for entry in entries:
+                        # Check if entry contains 'proton' and is a directory
                         if 'proton' in entry.lower():
-                            proton_found = True
-                            break
-                except Exception:
-                    pass
+                            entry_path = os.path.join(path, entry)
+                            if os.path.isdir(entry_path):
+                                # Verify it's an actual Proton installation by checking for key files
+                                proton_executable = os.path.join(entry_path, 'proton')
+                                version_file = os.path.join(entry_path, 'version')
+                                toolmanifest = os.path.join(entry_path, 'toolmanifest.vdf')
+                                
+                                # Check if any of the Proton-specific files exist
+                                if (os.path.exists(proton_executable) or 
+                                    os.path.exists(version_file) or 
+                                    os.path.exists(toolmanifest)):
+                                    proton_found = True
+                                    break
+                except (PermissionError, OSError) as e:
+                    # Log specific errors but continue checking other paths
+                    # In production, this could be logged to a file
+                    continue
+                except Exception as e:
+                    # Catch any other unexpected errors
+                    continue
         
         if proton_found:
             return DependencyCheck(

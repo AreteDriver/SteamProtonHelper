@@ -1,0 +1,14 @@
+# Steam Proton Helper Requirements
+# This application uses only Python standard library
+# Python 3.6+ required
+
+# No external dependencies required
+# The application uses only built-in modules:
+# - os
+# - sys
+# - subprocess
+# - shutil
+# - platform
+# - typing
+# - dataclasses
+# - enum

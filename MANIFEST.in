@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include CONTRIBUTING.md
+include EXAMPLES.md
+include requirements.txt
+include install.sh
+include steam_proton_helper.py
+include test_steam_proton_helper.py

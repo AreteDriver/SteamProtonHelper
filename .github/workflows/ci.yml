@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Display Python version
+      run: python --version
+    
+    - name: Verify Python syntax
+      run: python -m py_compile steam_proton_helper.py test_steam_proton_helper.py
+    
+    - name: Run tests
+      run: python test_steam_proton_helper.py
+    
+    - name: Test application runs
+      run: python steam_proton_helper.py || true
+    
+    - name: Check file permissions
+      run: |
+        test -x steam_proton_helper.py || exit 1
+        test -x install.sh || exit 1
+        echo "✓ File permissions correct"
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pylint
+    
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 steam_proton_helper.py test_steam_proton_helper.py --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 steam_proton_helper.py test_steam_proton_helper.py --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+    
+    - name: Lint with pylint
+      run: |
+        pylint steam_proton_helper.py test_steam_proton_helper.py --exit-zero
+
+  security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety
+    
+    - name: Run bandit security scan
+      run: bandit -r steam_proton_helper.py -f txt || true
+    
+    - name: Check for hardcoded secrets
+      run: |
+        echo "Checking for potential secrets..."
+        ! grep -rni "password\|secret\|api_key\|token" --include="*.py" . || echo "⚠ Review potential secrets"

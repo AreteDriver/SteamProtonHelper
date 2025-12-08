@@ -18,7 +18,6 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     author='SteamProtonHelper Contributors',
-    author_email='',
     url='https://github.com/AreteDriver/SteamProtonHelper',
     py_modules=['steam_proton_helper'],
     python_requires='>=3.6',

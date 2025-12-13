@@ -55,7 +55,7 @@ When games fail to launch, Steam provides minimal diagnostics. SteamProtonHelper
 - **Solution**: Automatically searches standard Steam installation paths to verify Proton presence
 
 ### ⚙️ **Dependency Chain Complexity**
-- **Constraint**: Gaming requires multiple interdependent components (Steam → Proton → Wine → Graphics Drivers → 32-bit libs)
+- **Constraint**: Gaming requires multiple interdependent components (Steam → Proton → Wine → Graphics Drivers → 32-bit libraries)
 - **Solution**: Checks entire dependency chain in logical order and reports status comprehensively
 
 ## Impact on Gaming Experience

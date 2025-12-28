@@ -1,10 +1,84 @@
 # Steam Proton Helper 🎮
 
-[![CI](https://github.com/AreteDriver/SteamProtonHelper/workflows/CI/badge.svg)](https://github.com/AreteDriver/SteamProtonHelper/actions)
-[![Python 3.6+](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+A comprehensive Linux tool designed to streamline the setup and troubleshooting of Steam and Proton for gaming on Linux. This helper application automatically detects missing dependencies, validates system configurations, and provides actionable fixes to eliminate common barriers that prevent Windows games from running smoothly on Linux.
 
-A comprehensive Linux tool to help setup Steam and Proton for gaming. This application checks dependencies, verifies installations, and helps troubleshoot common issues to get you gaming faster!
+## Purpose
+
+SteamProtonHelper serves as your **first-line diagnostic and setup assistant** for Linux gaming. It bridges the gap between a fresh Linux installation and a gaming-ready system by:
+
+- **Automated Detection**: Identifying your Linux distribution and available package managers
+- **Dependency Validation**: Checking for all required gaming components (Steam, Proton, graphics drivers, libraries)
+- **Smart Remediation**: Providing distribution-specific commands to fix detected issues
+- **System Verification**: Ensuring compatibility layers and runtime environments are properly configured
+
+## Problems Addressed
+
+Linux gaming presents unique challenges that SteamProtonHelper specifically targets:
+
+### 🎯 **Fragmented Setup Requirements**
+Different Linux distributions require different packages and configurations. SteamProtonHelper eliminates guesswork by auto-detecting your system and providing the exact commands needed for your distribution.
+
+### 🎯 **Missing Compatibility Layers**
+Windows games require Proton (a Wine-based compatibility layer), but users often don't know:
+- If Proton is installed
+- Where to find it
+- How to enable it in Steam
+SteamProtonHelper verifies Proton installation and guides users through activation.
+
+### 🎯 **Graphics Driver Complexity**
+Modern games require Vulkan support and proper graphics drivers, which vary by GPU vendor (NVIDIA, AMD, Intel). SteamProtonHelper checks for:
+- Vulkan runtime and tools
+- Mesa/OpenGL libraries
+- Distribution-specific driver packages
+
+### 🎯 **32-bit Library Dependencies**
+Many Windows games are 32-bit applications requiring multilib support on 64-bit Linux systems. SteamProtonHelper:
+- Detects if 32-bit architecture support is enabled
+- Provides commands to enable multilib repositories
+- Verifies essential 32-bit libraries are installed
+
+### 🎯 **Cryptic Error Messages**
+When games fail to launch, Steam provides minimal diagnostics. SteamProtonHelper proactively identifies configuration gaps before you encounter runtime errors.
+
+## Constraints Solved
+
+### ⚙️ **Distribution-Agnostic Operation**
+- **Constraint**: Package names and commands differ across Ubuntu, Fedora, Arch, openSUSE
+- **Solution**: Auto-detects package manager (apt, dnf, pacman, zypper) and provides tailored installation commands
+
+### ⚙️ **Permission and Access Requirements**
+- **Constraint**: System modifications require sudo/root access
+- **Solution**: Clearly displays commands requiring elevation, allowing users to review before executing
+
+### ⚙️ **Hidden Installation Paths**
+- **Constraint**: Proton installs in user-specific Steam directories that are difficult to locate
+- **Solution**: Automatically searches standard Steam installation paths to verify Proton presence
+
+### ⚙️ **Dependency Chain Complexity**
+- **Constraint**: Gaming requires multiple interdependent components (Steam → Proton → Wine → Graphics Drivers → 32-bit libraries)
+- **Solution**: Checks entire dependency chain in logical order and reports status comprehensively
+
+## Impact on Gaming Experience
+
+### 🚀 **Faster Time-to-Game**
+- **Before**: Hours of forum searching, trial-and-error installations, obscure error messages
+- **After**: 2-3 minute automated check provides complete system status and fix commands
+
+### 🚀 **Reduced Frustration**
+- **Before**: "This game worked on Windows, why won't it run on Linux?"
+- **After**: Clear diagnosis of missing components with specific remediation steps
+
+### 🚀 **Confidence Building**
+- **Before**: Uncertainty about whether Linux can handle gaming workloads
+- **After**: Transparent view of system readiness and required optimizations
+
+### 🚀 **Proactive Prevention**
+- **Before**: Install game, encounter error, debug system
+- **After**: Validate system configuration before purchasing/installing games
+
+### 🚀 **Learning Aid**
+- **Before**: Blindly copying commands from forums without understanding
+- **After**: See exactly which components are needed and why they matter for gaming
 
 ## Features
 

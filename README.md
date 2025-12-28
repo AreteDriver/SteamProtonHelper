@@ -2,7 +2,7 @@
 
 A comprehensive Linux tool designed to streamline the setup and troubleshooting of Steam and Proton for gaming on Linux. This helper application automatically detects missing dependencies, validates system configurations, and provides actionable fixes to eliminate common barriers that prevent Windows games from running smoothly on Linux.
 
-**Note:** This tool is a **read-only checker** by default. It does not install packages automatically.
+**Note:** This tool is a **read-only checker** by default. Use `--apply` to auto-install missing packages.
 
 ## Purpose
 
@@ -84,7 +84,7 @@ python3 steam_proton_helper.py
 ## CLI Options
 
 ```
-usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run]
+usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run] [--yes]
 
 Steam Proton Helper - Check system readiness for Steam gaming on Linux.
 
@@ -94,8 +94,9 @@ options:
   --no-color     Disable ANSI color codes in output
   --verbose, -v  Show verbose/debug output including paths tried
   --fix [FILE]   Generate a shell script with fix commands (stdout or file)
-  --apply        (Not implemented) Auto-install missing packages
-  --dry-run      (Not implemented) Show what --apply would do without executing
+  --apply        Auto-install missing packages (prompts for confirmation)
+  --dry-run      Show what --apply would install without executing
+  --yes, -y      Skip confirmation prompt (use with --apply)
 ```
 
 ### Examples
@@ -113,6 +114,15 @@ options:
 # Generate fix script to file
 ./steam_proton_helper.py --fix fix-steam.sh
 # Then review and run: bash fix-steam.sh
+
+# Preview what packages would be installed
+./steam_proton_helper.py --dry-run
+
+# Auto-install missing packages (with confirmation prompt)
+./steam_proton_helper.py --apply
+
+# Auto-install without confirmation (for scripting)
+./steam_proton_helper.py --apply --yes
 
 # Verbose mode to see all paths checked
 ./steam_proton_helper.py --verbose
@@ -346,4 +356,4 @@ This project is open source and available under the MIT License.
 
 ## Disclaimer
 
-This tool is provided as-is for informational purposes. It does **not** install packages by default. Always verify system changes before executing suggested commands.
+This tool is provided as-is for informational purposes. It does **not** install packages by default (use `--apply` to enable). Always review what will be installed with `--dry-run` before using `--apply`.

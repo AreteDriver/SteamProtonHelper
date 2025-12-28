@@ -1178,6 +1178,236 @@ def output_fix_script(
 
 
 # -----------------------------------------------------------------------------
+# Apply / Dry-Run Implementation
+# -----------------------------------------------------------------------------
+
+def collect_fix_actions(
+    checks: List[DependencyCheck],
+    package_manager: str
+) -> Tuple[List[str], List[Tuple[str, str]]]:
+    """
+    Collect fix actions from failed/warning checks.
+
+    Args:
+        checks: List of dependency check results.
+        package_manager: Package manager (apt, dnf, pacman).
+
+    Returns:
+        Tuple of (packages_to_install, other_commands)
+        where other_commands is list of (name, command) tuples.
+    """
+    packages: List[str] = []
+    other_commands: List[Tuple[str, str]] = []
+
+    for check in checks:
+        if check.status not in (CheckStatus.FAIL, CheckStatus.WARNING):
+            continue
+        if not check.fix_command:
+            continue
+
+        cmd = check.fix_command
+
+        # Extract packages from install commands
+        if package_manager == 'apt' and ('apt install' in cmd or 'apt-get install' in cmd):
+            parts = cmd.split('install')
+            if len(parts) > 1:
+                pkgs = parts[1].replace('-y', '').strip().split()
+                packages.extend(pkgs)
+            else:
+                other_commands.append((check.name, cmd))
+
+        elif package_manager == 'dnf' and 'dnf install' in cmd:
+            parts = cmd.split('install')
+            if len(parts) > 1:
+                pkgs = parts[1].replace('-y', '').strip().split()
+                packages.extend(pkgs)
+            else:
+                other_commands.append((check.name, cmd))
+
+        elif package_manager == 'pacman' and 'pacman -S' in cmd:
+            parts = cmd.split('-S')
+            if len(parts) > 1:
+                pkgs = parts[1].replace('--noconfirm', '').strip().split()
+                packages.extend(pkgs)
+            else:
+                other_commands.append((check.name, cmd))
+
+        else:
+            other_commands.append((check.name, cmd))
+
+    # Deduplicate packages
+    unique_packages = sorted(set(packages))
+
+    return (unique_packages, other_commands)
+
+
+def show_dry_run(
+    checks: List[DependencyCheck],
+    package_manager: str
+) -> int:
+    """
+    Show what --apply would do without executing.
+
+    Args:
+        checks: List of dependency check results.
+        package_manager: Package manager.
+
+    Returns:
+        Number of actions that would be taken.
+    """
+    packages, other_commands = collect_fix_actions(checks, package_manager)
+
+    if not packages and not other_commands:
+        print(f"{Color.GREEN}No fixes needed - all checks passed!{Color.END}")
+        return 0
+
+    print(f"{Color.BOLD}Dry run - the following actions would be taken:{Color.END}")
+    print()
+
+    action_count = 0
+
+    if packages:
+        print(f"{Color.CYAN}Packages to install:{Color.END}")
+        for pkg in packages:
+            print(f"  • {pkg}")
+            action_count += 1
+
+        # Show the command that would be run
+        if package_manager == 'apt':
+            cmd = f"sudo apt update && sudo apt install -y {' '.join(packages)}"
+        elif package_manager == 'dnf':
+            cmd = f"sudo dnf install -y {' '.join(packages)}"
+        elif package_manager == 'pacman':
+            cmd = f"sudo pacman -S --noconfirm {' '.join(packages)}"
+        else:
+            cmd = f"Install: {' '.join(packages)}"
+
+        print()
+        print(f"{Color.DIM}Command: {cmd}{Color.END}")
+        print()
+
+    if other_commands:
+        print(f"{Color.CYAN}Other actions:{Color.END}")
+        for name, cmd in other_commands:
+            print(f"  • {name}")
+            print(f"    {Color.DIM}{cmd}{Color.END}")
+            action_count += 1
+        print()
+
+    print(f"{Color.BOLD}Total: {action_count} action(s){Color.END}")
+    print()
+    print(f"Run with {Color.CYAN}--apply{Color.END} to execute these fixes.")
+
+    return action_count
+
+
+def apply_fixes(
+    checks: List[DependencyCheck],
+    package_manager: str,
+    skip_confirm: bool = False
+) -> Tuple[bool, str]:
+    """
+    Apply fixes by installing missing packages.
+
+    Args:
+        checks: List of dependency check results.
+        package_manager: Package manager.
+        skip_confirm: Skip confirmation prompt if True.
+
+    Returns:
+        Tuple of (success, message)
+    """
+    packages, other_commands = collect_fix_actions(checks, package_manager)
+
+    if not packages and not other_commands:
+        return (True, "No fixes needed - all checks passed!")
+
+    # Show what will be done
+    print(f"{Color.BOLD}The following fixes will be applied:{Color.END}")
+    print()
+
+    if packages:
+        print(f"{Color.CYAN}Packages to install ({len(packages)}):{Color.END}")
+        for pkg in packages:
+            print(f"  • {pkg}")
+        print()
+
+    if other_commands:
+        print(f"{Color.YELLOW}Manual actions required ({len(other_commands)}):{Color.END}")
+        for name, cmd in other_commands:
+            print(f"  • {name}: {cmd}")
+        print()
+
+    # Only install packages automatically, not other commands
+    if not packages:
+        print(f"{Color.YELLOW}No packages to install automatically.{Color.END}")
+        print("Please run the manual actions listed above.")
+        return (True, "No automatic fixes available")
+
+    # Confirmation prompt
+    if not skip_confirm:
+        print(f"{Color.BOLD}This will run sudo to install packages.{Color.END}")
+        try:
+            response = input(f"Continue? [y/N] ").strip().lower()
+            if response not in ('y', 'yes'):
+                return (False, "Cancelled by user")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return (False, "Cancelled by user")
+
+    # Build and execute the install command
+    print()
+    print(f"{Color.BOLD}Installing packages...{Color.END}")
+    print()
+
+    if package_manager == 'apt':
+        # Update first, then install
+        update_cmd = ['sudo', 'apt', 'update']
+        install_cmd = ['sudo', 'apt', 'install', '-y'] + packages
+    elif package_manager == 'dnf':
+        update_cmd = None
+        install_cmd = ['sudo', 'dnf', 'install', '-y'] + packages
+    elif package_manager == 'pacman':
+        update_cmd = ['sudo', 'pacman', '-Sy']
+        install_cmd = ['sudo', 'pacman', '-S', '--noconfirm'] + packages
+    else:
+        return (False, f"Unsupported package manager: {package_manager}")
+
+    try:
+        # Run update if needed
+        if update_cmd:
+            print(f"{Color.DIM}$ {' '.join(update_cmd)}{Color.END}")
+            result = subprocess.run(update_cmd, check=False)
+            if result.returncode != 0:
+                return (False, "Package list update failed")
+
+        # Run install
+        print(f"{Color.DIM}$ {' '.join(install_cmd)}{Color.END}")
+        result = subprocess.run(install_cmd, check=False)
+
+        if result.returncode == 0:
+            print()
+            print(f"{Color.GREEN}✓ Packages installed successfully!{Color.END}")
+
+            if other_commands:
+                print()
+                print(f"{Color.YELLOW}Note: The following manual actions are still required:{Color.END}")
+                for name, cmd in other_commands:
+                    print(f"  • {name}: {cmd}")
+
+            print()
+            print(f"Run {Color.CYAN}steam-proton-helper{Color.END} again to verify all fixes.")
+            return (True, "Packages installed successfully")
+        else:
+            return (False, f"Installation failed with exit code {result.returncode}")
+
+    except FileNotFoundError:
+        return (False, f"Package manager '{package_manager}' not found")
+    except Exception as e:
+        return (False, f"Error during installation: {e}")
+
+
+# -----------------------------------------------------------------------------
 # Main Application
 # -----------------------------------------------------------------------------
 
@@ -1192,10 +1422,13 @@ Examples:
   %(prog)s --json           Output results as JSON
   %(prog)s --fix            Print fix script to stdout
   %(prog)s --fix fix.sh     Write fix script to file
+  %(prog)s --dry-run        Show what --apply would install
+  %(prog)s --apply          Install missing packages (prompts for confirmation)
+  %(prog)s --apply -y       Install without confirmation prompt
   %(prog)s --no-color       Disable colored output
   %(prog)s --verbose        Show debug information
 
-Note: This tool is read-only by default and does not install packages.
+Note: Use --dry-run to preview before --apply. Requires sudo for installation.
 """
     )
 
@@ -1228,13 +1461,19 @@ Note: This tool is read-only by default and does not install packages.
     parser.add_argument(
         '--apply',
         action='store_true',
-        help='(Not implemented) Auto-install missing packages'
+        help='Auto-install missing packages (requires sudo, prompts for confirmation)'
     )
 
     parser.add_argument(
         '--dry-run',
         action='store_true',
-        help='(Not implemented) Show what --apply would do without executing'
+        help='Show what --apply would install without executing'
+    )
+
+    parser.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help='Skip confirmation prompt when using --apply'
     )
 
     return parser.parse_args()
@@ -1251,13 +1490,6 @@ def main() -> int:
     global verbose_log
     verbose_log = VerboseLogger(enabled=args.verbose)
 
-    # Handle not-implemented options
-    if args.apply or args.dry_run:
-        if not args.json:
-            print(f"{Color.YELLOW}⚠ --apply and --dry-run are not yet implemented.{Color.END}")
-            print(f"  This tool is currently read-only (checker mode).")
-            print()
-
     try:
         # Detect distro
         distro, package_manager = DistroDetector.detect_distro()
@@ -1271,6 +1503,18 @@ def main() -> int:
         if args.fix is not None:
             # Generate fix script
             output_fix_script(checks, distro, package_manager, args.fix)
+        elif args.dry_run:
+            # Show what --apply would do
+            print_header()
+            show_dry_run(checks, package_manager)
+        elif args.apply:
+            # Apply fixes
+            print_header()
+            success, message = apply_fixes(checks, package_manager, skip_confirm=args.yes)
+            if not success:
+                print(f"{Color.RED}✗ {message}{Color.END}")
+                return 1
+            print(f"{Color.GREEN}{message}{Color.END}")
         elif args.json:
             output_json(checks, distro, package_manager)
         else:

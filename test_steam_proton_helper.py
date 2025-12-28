@@ -42,6 +42,9 @@ from steam_proton_helper import (
     parse_args,
     generate_fix_script,
     output_fix_script,
+    collect_fix_actions,
+    show_dry_run,
+    apply_fixes,
 )
 
 
@@ -923,6 +926,191 @@ class TestFixScriptGeneration(unittest.TestCase):
         mock_print.assert_called_once()
         output = mock_print.call_args[0][0]
         self.assertIn("#!/bin/bash", output)
+
+
+# =============================================================================
+# Test Apply / Dry-Run
+# =============================================================================
+
+class TestCollectFixActions(unittest.TestCase):
+    """Test collect_fix_actions function"""
+
+    def test_no_fixes_needed(self):
+        """Test when no fixes are needed"""
+        checks = [
+            DependencyCheck("Test", CheckStatus.PASS, "OK", "System"),
+        ]
+        packages, other = collect_fix_actions(checks, "apt")
+        self.assertEqual(packages, [])
+        self.assertEqual(other, [])
+
+    def test_collect_apt_packages(self):
+        """Test collecting apt packages"""
+        checks = [
+            DependencyCheck(
+                "Pkg1", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo apt install -y pkg1"
+            ),
+            DependencyCheck(
+                "Pkg2", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo apt install -y pkg2 pkg3"
+            ),
+        ]
+        packages, other = collect_fix_actions(checks, "apt")
+        self.assertIn("pkg1", packages)
+        self.assertIn("pkg2", packages)
+        self.assertIn("pkg3", packages)
+        self.assertEqual(other, [])
+
+    def test_collect_pacman_packages(self):
+        """Test collecting pacman packages"""
+        checks = [
+            DependencyCheck(
+                "Pkg1", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo pacman -S --noconfirm lib32-pkg"
+            ),
+        ]
+        packages, other = collect_fix_actions(checks, "pacman")
+        self.assertIn("lib32-pkg", packages)
+
+    def test_collect_dnf_packages(self):
+        """Test collecting dnf packages"""
+        checks = [
+            DependencyCheck(
+                "Pkg1", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo dnf install -y pkg.i686"
+            ),
+        ]
+        packages, other = collect_fix_actions(checks, "dnf")
+        self.assertIn("pkg.i686", packages)
+
+    def test_collect_other_commands(self):
+        """Test collecting non-package commands"""
+        checks = [
+            DependencyCheck(
+                "Proton", CheckStatus.WARNING, "Not found", "Proton",
+                fix_command="Enable Steam Play in Settings"
+            ),
+        ]
+        packages, other = collect_fix_actions(checks, "apt")
+        self.assertEqual(packages, [])
+        self.assertEqual(len(other), 1)
+        self.assertEqual(other[0][0], "Proton")
+
+    def test_deduplicates_packages(self):
+        """Test that duplicate packages are removed"""
+        checks = [
+            DependencyCheck(
+                "Pkg1", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo apt install -y pkg1"
+            ),
+            DependencyCheck(
+                "Pkg2", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo apt install -y pkg1"
+            ),
+        ]
+        packages, other = collect_fix_actions(checks, "apt")
+        self.assertEqual(packages.count("pkg1"), 1)
+
+
+class TestShowDryRun(unittest.TestCase):
+    """Test show_dry_run function"""
+
+    @patch('builtins.print')
+    def test_dry_run_no_fixes(self, mock_print):
+        """Test dry run when no fixes needed"""
+        checks = [
+            DependencyCheck("Test", CheckStatus.PASS, "OK", "System"),
+        ]
+        count = show_dry_run(checks, "apt")
+        self.assertEqual(count, 0)
+
+    @patch('builtins.print')
+    def test_dry_run_with_packages(self, mock_print):
+        """Test dry run with packages to install"""
+        checks = [
+            DependencyCheck(
+                "Pkg1", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo apt install -y pkg1"
+            ),
+        ]
+        count = show_dry_run(checks, "apt")
+        self.assertEqual(count, 1)
+
+
+class TestApplyFixes(unittest.TestCase):
+    """Test apply_fixes function"""
+
+    def test_apply_no_fixes_needed(self):
+        """Test apply when no fixes needed"""
+        checks = [
+            DependencyCheck("Test", CheckStatus.PASS, "OK", "System"),
+        ]
+        success, message = apply_fixes(checks, "apt", skip_confirm=True)
+        self.assertTrue(success)
+        self.assertIn("No fixes needed", message)
+
+    @patch('builtins.print')
+    def test_apply_only_manual_actions(self, mock_print):
+        """Test apply with only manual actions"""
+        checks = [
+            DependencyCheck(
+                "Proton", CheckStatus.WARNING, "Not found", "Proton",
+                fix_command="Enable Steam Play"
+            ),
+        ]
+        success, message = apply_fixes(checks, "apt", skip_confirm=True)
+        self.assertTrue(success)
+        self.assertIn("No automatic fixes", message)
+
+    @patch('builtins.input', return_value='n')
+    @patch('builtins.print')
+    def test_apply_cancelled_by_user(self, mock_print, mock_input):
+        """Test apply cancelled by user"""
+        checks = [
+            DependencyCheck(
+                "Pkg1", CheckStatus.FAIL, "Missing", "32-bit",
+                fix_command="sudo apt install -y pkg1"
+            ),
+        ]
+        success, message = apply_fixes(checks, "apt", skip_confirm=False)
+        self.assertFalse(success)
+        self.assertIn("Cancelled", message)
+
+
+class TestApplyArgumentParsing(unittest.TestCase):
+    """Test argument parsing for apply/dry-run"""
+
+    def test_apply_flag(self):
+        """Test --apply flag"""
+        with patch('sys.argv', ['prog', '--apply']):
+            args = parse_args()
+            self.assertTrue(args.apply)
+
+    def test_dry_run_flag(self):
+        """Test --dry-run flag"""
+        with patch('sys.argv', ['prog', '--dry-run']):
+            args = parse_args()
+            self.assertTrue(args.dry_run)
+
+    def test_yes_flag(self):
+        """Test --yes flag"""
+        with patch('sys.argv', ['prog', '--yes']):
+            args = parse_args()
+            self.assertTrue(args.yes)
+
+    def test_yes_short_flag(self):
+        """Test -y flag"""
+        with patch('sys.argv', ['prog', '-y']):
+            args = parse_args()
+            self.assertTrue(args.yes)
+
+    def test_apply_with_yes(self):
+        """Test --apply -y combination"""
+        with patch('sys.argv', ['prog', '--apply', '-y']):
+            args = parse_args()
+            self.assertTrue(args.apply)
+            self.assertTrue(args.yes)
 
 
 # =============================================================================

@@ -1127,6 +1127,28 @@ class TestGameArgument(unittest.TestCase):
             self.assertEqual(args.game, ['292030,1245620'])
 
 
+class TestSearchArgument(unittest.TestCase):
+    """Test --search argument parsing"""
+
+    def test_search_argument(self):
+        """Test --search argument is parsed"""
+        with patch('sys.argv', ['prog', '--search', 'witcher']):
+            args = parse_args()
+            self.assertEqual(args.search, 'witcher')
+
+    def test_no_search_argument(self):
+        """Test default is None when --search not provided"""
+        with patch('sys.argv', ['prog']):
+            args = parse_args()
+            self.assertIsNone(args.search)
+
+    def test_search_with_spaces(self):
+        """Test --search with spaces in query"""
+        with patch('sys.argv', ['prog', '--search', 'elden ring']):
+            args = parse_args()
+            self.assertEqual(args.search, 'elden ring')
+
+
 class TestSteamApp(unittest.TestCase):
     """Test SteamApp dataclass"""
 

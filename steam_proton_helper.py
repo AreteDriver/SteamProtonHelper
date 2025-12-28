@@ -2048,6 +2048,7 @@ Examples:
   %(prog)s --game "elden ring"   Check ProtonDB rating by game name
   %(prog)s --game 292030         Check ProtonDB rating by AppID
   %(prog)s --game A --game B     Check multiple games
+  %(prog)s --search "witcher"    Search Steam for games
   %(prog)s --fix                 Print fix script to stdout
   %(prog)s --fix fix.sh          Write fix script to file
   %(prog)s --dry-run             Show what --apply would install
@@ -2058,7 +2059,7 @@ Examples:
 
 Note: Use --dry-run to preview before --apply. Requires sudo for installation.
       Use --game with a game name or Steam AppID to check ProtonDB compatibility.
-      Multiple games can be checked with repeated --game flags or comma-separated AppIDs.
+      Use --search to find AppIDs without querying ProtonDB.
 """
     )
 
@@ -2119,6 +2120,12 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
         help='Check ProtonDB compatibility by game name or AppID (can be used multiple times)'
     )
 
+    parser.add_argument(
+        '--search',
+        metavar='QUERY',
+        help='Search Steam for games by name (returns AppIDs without ProtonDB lookup)'
+    )
+
     return parser.parse_args()
 
 
@@ -2132,6 +2139,34 @@ def main() -> int:
 
     global verbose_log
     verbose_log = VerboseLogger(enabled=args.verbose)
+
+    # Handle --search flag (Steam game search)
+    if args.search:
+        try:
+            results = search_steam_games(args.search, limit=20)
+
+            if args.json:
+                output = {
+                    "query": args.search,
+                    "results": [{"appid": r.appid, "name": r.name} for r in results]
+                }
+                print(json.dumps(output, indent=2))
+            elif results:
+                print(f"Search results for '{args.search}':\n")
+                for i, app in enumerate(results, 1):
+                    print(f"  {i:2}. {app.name}")
+                    print(f"      AppID: {app.appid}")
+                    print(f"      https://store.steampowered.com/app/{app.appid}")
+                    if i < len(results):
+                        print()
+                print(f"\nUse --game <AppID> to check ProtonDB compatibility.")
+            else:
+                print(f"No games found matching '{args.search}'.")
+                return 1
+            return 0
+        except Exception as e:
+            print(f"Error searching Steam: {e}", file=sys.stderr)
+            return 1
 
     # Handle --game flag (ProtonDB lookup)
     if args.game:

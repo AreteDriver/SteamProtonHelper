@@ -84,20 +84,21 @@ python3 steam_proton_helper.py
 ## CLI Options
 
 ```
-usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run] [--yes] [--game APPID]
+usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run] [--yes] [--game NAME] [--search QUERY]
 
 Steam Proton Helper - Check system readiness for Steam gaming on Linux.
 
 options:
-  -h, --help     show this help message and exit
-  --json         Output results as machine-readable JSON
-  --no-color     Disable ANSI color codes in output
-  --verbose, -v  Show verbose/debug output including paths tried
-  --fix [FILE]   Generate a shell script with fix commands (stdout or file)
-  --apply        Auto-install missing packages (prompts for confirmation)
-  --dry-run      Show what --apply would install without executing
-  --yes, -y      Skip confirmation prompt (use with --apply)
-  --game NAME    Check ProtonDB compatibility by game name or AppID
+  -h, --help       show this help message and exit
+  --json           Output results as machine-readable JSON
+  --no-color       Disable ANSI color codes in output
+  --verbose, -v    Show verbose/debug output including paths tried
+  --fix [FILE]     Generate a shell script with fix commands (stdout or file)
+  --apply          Auto-install missing packages (prompts for confirmation)
+  --dry-run        Show what --apply would install without executing
+  --yes, -y        Skip confirmation prompt (use with --apply)
+  --game NAME      Check ProtonDB compatibility by game name or AppID
+  --search QUERY   Search Steam for games (returns AppIDs, no ProtonDB lookup)
 ```
 
 ### Examples
@@ -149,6 +150,10 @@ options:
 # Get ProtonDB info as JSON
 ./steam_proton_helper.py --game "elden ring" --json
 ./steam_proton_helper.py --game 292030 --game 1245620 --json  # Batch JSON
+
+# Search Steam for games (get AppIDs without ProtonDB lookup)
+./steam_proton_helper.py --search "witcher"
+./steam_proton_helper.py --search "souls" --json
 ```
 
 ### Exit Codes

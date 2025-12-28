@@ -84,7 +84,7 @@ python3 steam_proton_helper.py
 ## CLI Options
 
 ```
-usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--apply] [--dry-run]
+usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run]
 
 Steam Proton Helper - Check system readiness for Steam gaming on Linux.
 
@@ -93,6 +93,7 @@ options:
   --json         Output results as machine-readable JSON
   --no-color     Disable ANSI color codes in output
   --verbose, -v  Show verbose/debug output including paths tried
+  --fix [FILE]   Generate a shell script with fix commands (stdout or file)
   --apply        (Not implemented) Auto-install missing packages
   --dry-run      (Not implemented) Show what --apply would do without executing
 ```
@@ -105,6 +106,13 @@ options:
 
 # JSON output for scripting
 ./steam_proton_helper.py --json
+
+# Generate fix script to stdout
+./steam_proton_helper.py --fix
+
+# Generate fix script to file
+./steam_proton_helper.py --fix fix-steam.sh
+# Then review and run: bash fix-steam.sh
 
 # Verbose mode to see all paths checked
 ./steam_proton_helper.py --verbose

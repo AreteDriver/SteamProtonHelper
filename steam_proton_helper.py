@@ -1022,6 +1022,162 @@ def output_json(checks: List[DependencyCheck], distro: str, package_manager: str
 
 
 # -----------------------------------------------------------------------------
+# Fix Script Generation
+# -----------------------------------------------------------------------------
+
+def generate_fix_script(
+    checks: List[DependencyCheck],
+    distro: str,
+    package_manager: str
+) -> str:
+    """
+    Generate a shell script containing commands to fix failed checks.
+
+    Args:
+        checks: List of dependency check results.
+        distro: Linux distribution name.
+        package_manager: Package manager (apt, dnf, pacman, etc.)
+
+    Returns:
+        Shell script as a string.
+    """
+    lines: List[str] = []
+
+    # Header
+    lines.append("#!/bin/bash")
+    lines.append("# Steam Proton Helper - Fix Script")
+    lines.append(f"# Generated for: {distro}")
+    lines.append(f"# Package manager: {package_manager}")
+    lines.append("#")
+    lines.append("# Review this script before running!")
+    lines.append("# Run with: bash fix-steam-proton.sh")
+    lines.append("")
+    lines.append("set -e  # Exit on error")
+    lines.append("")
+
+    # Collect fix commands from failed/warning checks
+    fix_commands: List[Tuple[str, str]] = []
+    for check in checks:
+        if check.status in (CheckStatus.FAIL, CheckStatus.WARNING) and check.fix_command:
+            fix_commands.append((check.name, check.fix_command))
+
+    if not fix_commands:
+        lines.append("echo 'No fixes needed - all checks passed!'")
+        lines.append("exit 0")
+    else:
+        lines.append(f"echo 'Steam Proton Helper - Applying {len(fix_commands)} fix(es)'")
+        lines.append("echo ''")
+        lines.append("")
+
+        # Group commands that can be combined (same package manager commands)
+        apt_packages: List[str] = []
+        dnf_packages: List[str] = []
+        pacman_packages: List[str] = []
+        other_commands: List[Tuple[str, str]] = []
+
+        for name, cmd in fix_commands:
+            # Try to extract package names from install commands
+            if 'apt install' in cmd or 'apt-get install' in cmd:
+                # Extract packages after 'install'
+                parts = cmd.split('install')
+                if len(parts) > 1:
+                    pkgs = parts[1].replace('-y', '').strip().split()
+                    apt_packages.extend(pkgs)
+                else:
+                    other_commands.append((name, cmd))
+            elif 'dnf install' in cmd:
+                parts = cmd.split('install')
+                if len(parts) > 1:
+                    pkgs = parts[1].replace('-y', '').strip().split()
+                    dnf_packages.extend(pkgs)
+                else:
+                    other_commands.append((name, cmd))
+            elif 'pacman -S' in cmd:
+                parts = cmd.split('-S')
+                if len(parts) > 1:
+                    pkgs = parts[1].replace('--noconfirm', '').strip().split()
+                    pacman_packages.extend(pkgs)
+                else:
+                    other_commands.append((name, cmd))
+            else:
+                other_commands.append((name, cmd))
+
+        # Output combined package install commands
+        if apt_packages:
+            unique_pkgs = sorted(set(apt_packages))
+            lines.append("# Install missing packages (apt)")
+            lines.append(f"echo 'Installing: {' '.join(unique_pkgs)}'")
+            lines.append(f"sudo apt update && sudo apt install -y {' '.join(unique_pkgs)}")
+            lines.append("")
+
+        if dnf_packages:
+            unique_pkgs = sorted(set(dnf_packages))
+            lines.append("# Install missing packages (dnf)")
+            lines.append(f"echo 'Installing: {' '.join(unique_pkgs)}'")
+            lines.append(f"sudo dnf install -y {' '.join(unique_pkgs)}")
+            lines.append("")
+
+        if pacman_packages:
+            unique_pkgs = sorted(set(pacman_packages))
+            lines.append("# Install missing packages (pacman)")
+            lines.append(f"echo 'Installing: {' '.join(unique_pkgs)}'")
+            lines.append(f"sudo pacman -S --noconfirm {' '.join(unique_pkgs)}")
+            lines.append("")
+
+        # Output other commands
+        for name, cmd in other_commands:
+            lines.append(f"# Fix: {name}")
+            lines.append(f"echo 'Fixing: {name}'")
+            lines.append(cmd)
+            lines.append("")
+
+        lines.append("echo ''")
+        lines.append("echo 'Done! Run steam-proton-helper again to verify fixes.'")
+
+    return "\n".join(lines)
+
+
+def output_fix_script(
+    checks: List[DependencyCheck],
+    distro: str,
+    package_manager: str,
+    output_file: str
+) -> bool:
+    """
+    Output the fix script to a file or stdout.
+
+    Args:
+        checks: List of dependency check results.
+        distro: Linux distribution name.
+        package_manager: Package manager.
+        output_file: Filename or "-" for stdout.
+
+    Returns:
+        True if script was written, False if no fixes needed.
+    """
+    script = generate_fix_script(checks, distro, package_manager)
+
+    # Count actual fixes
+    fix_count = sum(
+        1 for c in checks
+        if c.status in (CheckStatus.FAIL, CheckStatus.WARNING) and c.fix_command
+    )
+
+    if output_file == "-":
+        print(script)
+    else:
+        with open(output_file, 'w') as f:
+            f.write(script)
+        os.chmod(output_file, 0o755)
+        print(f"Fix script written to: {output_file}")
+        print(f"Contains {fix_count} fix command(s)")
+        if fix_count > 0:
+            print(f"\nReview and run with: bash {output_file}")
+
+    return fix_count > 0
+
+
+# -----------------------------------------------------------------------------
 # Main Application
 # -----------------------------------------------------------------------------
 
@@ -1034,6 +1190,8 @@ def parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s                  Run all checks with colored output
   %(prog)s --json           Output results as JSON
+  %(prog)s --fix            Print fix script to stdout
+  %(prog)s --fix fix.sh     Write fix script to file
   %(prog)s --no-color       Disable colored output
   %(prog)s --verbose        Show debug information
 
@@ -1057,6 +1215,14 @@ Note: This tool is read-only by default and does not install packages.
         '--verbose', '-v',
         action='store_true',
         help='Show verbose/debug output including paths tried'
+    )
+
+    parser.add_argument(
+        '--fix',
+        nargs='?',
+        const='-',
+        metavar='FILE',
+        help='Generate a shell script with fix commands. Use "-" or omit for stdout, or specify a filename.'
     )
 
     parser.add_argument(
@@ -1102,7 +1268,10 @@ def main() -> int:
         checks = checker.run_all_checks()
 
         # Output results
-        if args.json:
+        if args.fix is not None:
+            # Generate fix script
+            output_fix_script(checks, distro, package_manager, args.fix)
+        elif args.json:
             output_json(checks, distro, package_manager)
         else:
             print_header()

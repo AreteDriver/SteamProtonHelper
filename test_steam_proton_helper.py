@@ -40,6 +40,8 @@ from steam_proton_helper import (
     get_status_color,
     output_json,
     parse_args,
+    generate_fix_script,
+    output_fix_script,
 )
 
 
@@ -780,6 +782,147 @@ class TestArgumentParsing(unittest.TestCase):
             self.assertTrue(args.json)
             self.assertTrue(args.no_color)
             self.assertTrue(args.verbose)
+
+    def test_fix_flag_stdout(self):
+        """Test --fix flag defaults to stdout"""
+        with patch('sys.argv', ['prog', '--fix']):
+            args = parse_args()
+            self.assertEqual(args.fix, '-')
+
+    def test_fix_flag_with_file(self):
+        """Test --fix flag with filename"""
+        with patch('sys.argv', ['prog', '--fix', 'fix.sh']):
+            args = parse_args()
+            self.assertEqual(args.fix, 'fix.sh')
+
+
+# =============================================================================
+# Test Fix Script Generation
+# =============================================================================
+
+class TestFixScriptGeneration(unittest.TestCase):
+    """Test fix script generation"""
+
+    def test_generate_fix_script_no_fixes(self):
+        """Test fix script when no fixes are needed"""
+        checks = [
+            DependencyCheck("Test1", CheckStatus.PASS, "OK", "System"),
+            DependencyCheck("Test2", CheckStatus.PASS, "OK", "Graphics"),
+        ]
+        script = generate_fix_script(checks, "Ubuntu", "apt")
+
+        self.assertIn("#!/bin/bash", script)
+        self.assertIn("No fixes needed", script)
+        self.assertIn("exit 0", script)
+
+    def test_generate_fix_script_with_apt_fixes(self):
+        """Test fix script with apt package fixes"""
+        checks = [
+            DependencyCheck(
+                "Package1", CheckStatus.FAIL, "Not installed", "32-bit",
+                fix_command="sudo apt install -y package1"
+            ),
+            DependencyCheck(
+                "Package2", CheckStatus.FAIL, "Not installed", "32-bit",
+                fix_command="sudo apt install -y package2"
+            ),
+        ]
+        script = generate_fix_script(checks, "Ubuntu", "apt")
+
+        self.assertIn("#!/bin/bash", script)
+        self.assertIn("set -e", script)
+        self.assertIn("apt", script)
+        # Packages should be combined
+        self.assertIn("package1", script)
+        self.assertIn("package2", script)
+
+    def test_generate_fix_script_with_pacman_fixes(self):
+        """Test fix script with pacman package fixes"""
+        checks = [
+            DependencyCheck(
+                "Package1", CheckStatus.FAIL, "Not installed", "32-bit",
+                fix_command="sudo pacman -S --noconfirm lib32-pkg"
+            ),
+        ]
+        script = generate_fix_script(checks, "Arch", "pacman")
+
+        self.assertIn("pacman", script)
+        self.assertIn("lib32-pkg", script)
+
+    def test_generate_fix_script_with_dnf_fixes(self):
+        """Test fix script with dnf package fixes"""
+        checks = [
+            DependencyCheck(
+                "Package1", CheckStatus.FAIL, "Not installed", "32-bit",
+                fix_command="sudo dnf install -y package.i686"
+            ),
+        ]
+        script = generate_fix_script(checks, "Fedora", "dnf")
+
+        self.assertIn("dnf", script)
+        self.assertIn("package.i686", script)
+
+    def test_generate_fix_script_with_other_commands(self):
+        """Test fix script with non-package-manager commands"""
+        checks = [
+            DependencyCheck(
+                "Proton", CheckStatus.WARNING, "Not found", "Proton",
+                fix_command="Install Proton from Steam: Settings → Compatibility"
+            ),
+        ]
+        script = generate_fix_script(checks, "Ubuntu", "apt")
+
+        self.assertIn("Fix: Proton", script)
+        self.assertIn("Install Proton from Steam", script)
+
+    def test_generate_fix_script_includes_warnings(self):
+        """Test that warnings with fix commands are included"""
+        checks = [
+            DependencyCheck(
+                "Warning", CheckStatus.WARNING, "Warning message", "System",
+                fix_command="some fix command"
+            ),
+        ]
+        script = generate_fix_script(checks, "Ubuntu", "apt")
+
+        self.assertIn("some fix command", script)
+
+    def test_output_fix_script_to_file(self):
+        """Test writing fix script to file"""
+        checks = [
+            DependencyCheck("Test", CheckStatus.PASS, "OK", "System"),
+        ]
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+            temp_path = f.name
+
+        try:
+            output_fix_script(checks, "Ubuntu", "apt", temp_path)
+
+            # File should exist and be executable
+            self.assertTrue(os.path.exists(temp_path))
+            mode = os.stat(temp_path).st_mode
+            self.assertTrue(mode & 0o100)  # Check executable bit
+
+            # Content should be valid
+            with open(temp_path, 'r') as f:
+                content = f.read()
+            self.assertIn("#!/bin/bash", content)
+        finally:
+            os.unlink(temp_path)
+
+    @patch('builtins.print')
+    def test_output_fix_script_to_stdout(self, mock_print):
+        """Test writing fix script to stdout"""
+        checks = [
+            DependencyCheck("Test", CheckStatus.PASS, "OK", "System"),
+        ]
+
+        output_fix_script(checks, "Ubuntu", "apt", "-")
+
+        mock_print.assert_called_once()
+        output = mock_print.call_args[0][0]
+        self.assertIn("#!/bin/bash", output)
 
 
 # =============================================================================

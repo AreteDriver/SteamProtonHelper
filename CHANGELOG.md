@@ -8,17 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **ProtonDB integration** - Check game compatibility with `--game APPID`
-- Fetch tier rating (platinum/gold/silver/bronze/borked)
-- Display confidence score, total reports, and trending tier
-- JSON output support for ProtonDB queries
-- 7 new unit tests for ProtonDB functionality (119 total)
+- N/A
 
 ### Changed
 - N/A
 
 ### Fixed
 - N/A
+
+## [1.4.0] - 2025-12-27
+
+### Added
+- **ProtonDB integration** - Check game compatibility with `--game APPID`
+- Fetch tier rating (platinum/gold/silver/bronze/borked)
+- Display confidence score, total reports, and trending tier
+- JSON output support for ProtonDB queries
+- 7 new unit tests for ProtonDB functionality (119 total)
 
 ## [1.3.0] - 2025-12-28
 
@@ -108,7 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.0.0...v1.1.0

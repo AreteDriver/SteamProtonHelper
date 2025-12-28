@@ -142,6 +142,26 @@ options:
 | 1 | One or more checks failed |
 | 130 | Interrupted by user (Ctrl+C) |
 
+### Shell Completions
+
+Tab completion is available for Bash, Zsh, and Fish. Install via `./install.sh` or manually:
+
+**Bash:**
+```bash
+cp completions/steam-proton-helper.bash ~/.local/share/bash-completion/completions/steam-proton-helper
+```
+
+**Zsh:** (add `~/.zsh/completions` to your `$fpath` in `.zshrc`)
+```bash
+mkdir -p ~/.zsh/completions
+cp completions/_steam-proton-helper ~/.zsh/completions/
+```
+
+**Fish:**
+```bash
+cp completions/steam-proton-helper.fish ~/.config/fish/completions/
+```
+
 ## What It Checks
 
 ### System

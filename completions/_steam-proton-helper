@@ -1,0 +1,23 @@
+#compdef steam-proton-helper steam_proton_helper.py
+
+# Zsh completion for steam-proton-helper
+# Copy to a directory in your $fpath (e.g., ~/.zsh/completions/)
+
+_steam-proton-helper() {
+    local -a opts
+    opts=(
+        '(-h --help)'{-h,--help}'[Show help message and exit]'
+        '(-V --version)'{-V,--version}'[Show version and exit]'
+        '--json[Output results as machine-readable JSON]'
+        '--no-color[Disable ANSI color codes in output]'
+        '(-v --verbose)'{-v,--verbose}'[Show verbose/debug output]'
+        '--fix[Generate fix script (stdout or file)]:file:_files'
+        '--apply[Auto-install missing packages]'
+        '--dry-run[Show what --apply would install]'
+        '(-y --yes)'{-y,--yes}'[Skip confirmation prompt]'
+    )
+
+    _arguments -s -S $opts
+}
+
+_steam-proton-helper "$@"

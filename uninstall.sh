@@ -39,6 +39,23 @@ if [ -f ~/.local/share/applications/steam-proton-helper.desktop ]; then
     fi
 fi
 
+# Remove shell completions
+COMPLETIONS_EXIST=false
+[ -f ~/.local/share/bash-completion/completions/steam-proton-helper ] && COMPLETIONS_EXIST=true
+[ -f ~/.zsh/completions/_steam-proton-helper ] && COMPLETIONS_EXIST=true
+[ -f ~/.config/fish/completions/steam-proton-helper.fish ] && COMPLETIONS_EXIST=true
+
+if [ "$COMPLETIONS_EXIST" = true ]; then
+    read -p "Remove shell completions? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -f ~/.local/share/bash-completion/completions/steam-proton-helper
+        rm -f ~/.zsh/completions/_steam-proton-helper
+        rm -f ~/.config/fish/completions/steam-proton-helper.fish
+        echo "✓ Removed shell completions"
+    fi
+fi
+
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║  Uninstall Complete!                     ║"

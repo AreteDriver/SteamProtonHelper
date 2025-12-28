@@ -97,6 +97,41 @@ else
     echo "⊙ Skipped desktop integration"
 fi
 
+# Install shell completions
+read -p "Install shell completions (bash/zsh/fish)? [y/N] " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    COMPLETIONS_INSTALLED=false
+
+    # Bash completions
+    if [ -d ~/.local/share/bash-completion/completions ] || mkdir -p ~/.local/share/bash-completion/completions 2>/dev/null; then
+        cp "$SCRIPT_DIR/completions/steam-proton-helper.bash" ~/.local/share/bash-completion/completions/steam-proton-helper
+        echo "✓ Installed Bash completions"
+        COMPLETIONS_INSTALLED=true
+    fi
+
+    # Zsh completions
+    if [ -d ~/.zsh/completions ] || mkdir -p ~/.zsh/completions 2>/dev/null; then
+        cp "$SCRIPT_DIR/completions/_steam-proton-helper" ~/.zsh/completions/_steam-proton-helper
+        echo "✓ Installed Zsh completions (add ~/.zsh/completions to \$fpath)"
+        COMPLETIONS_INSTALLED=true
+    fi
+
+    # Fish completions
+    if [ -d ~/.config/fish/completions ] || mkdir -p ~/.config/fish/completions 2>/dev/null; then
+        cp "$SCRIPT_DIR/completions/steam-proton-helper.fish" ~/.config/fish/completions/steam-proton-helper.fish
+        echo "✓ Installed Fish completions"
+        COMPLETIONS_INSTALLED=true
+    fi
+
+    if [ "$COMPLETIONS_INSTALLED" = false ]; then
+        echo "⚠ Could not install completions automatically"
+        echo "  Copy files from $SCRIPT_DIR/completions/ manually"
+    fi
+else
+    echo "⊙ Skipped shell completions"
+fi
+
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║  Installation Complete!                  ║"

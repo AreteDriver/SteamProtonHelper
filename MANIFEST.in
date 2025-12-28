@@ -9,3 +9,4 @@ include uninstall.sh
 include steam_proton_helper.py
 include test_steam_proton_helper.py
 recursive-include assets *
+recursive-include completions *

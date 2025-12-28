@@ -931,6 +931,21 @@ class TestArgumentParsing(unittest.TestCase):
             self.assertFalse(args.apply)
             self.assertFalse(args.dry_run)
 
+    def test_version_flag(self):
+        """Test --version flag exits with version info"""
+        import steam_proton_helper
+        with patch('sys.argv', ['prog', '--version']):
+            with self.assertRaises(SystemExit) as cm:
+                parse_args()
+            self.assertEqual(cm.exception.code, 0)
+
+    def test_version_short_flag(self):
+        """Test -V flag exits with version info"""
+        with patch('sys.argv', ['prog', '-V']):
+            with self.assertRaises(SystemExit) as cm:
+                parse_args()
+            self.assertEqual(cm.exception.code, 0)
+
     def test_json_flag(self):
         """Test --json flag"""
         with patch('sys.argv', ['prog', '--json']):

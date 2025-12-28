@@ -1645,6 +1645,12 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
     )
 
     parser.add_argument(
+        '--version', '-V',
+        action='version',
+        version=f'%(prog)s {__version__}'
+    )
+
+    parser.add_argument(
         '--json',
         action='store_true',
         help='Output results as machine-readable JSON'

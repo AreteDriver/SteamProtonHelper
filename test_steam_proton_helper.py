@@ -685,6 +685,8 @@ class TestDependencyChecker(unittest.TestCase):
         self.assertIn("Gaming Tools", categories)
         self.assertIn("Wine", categories)
         self.assertIn("Compatibility", categories)
+        self.assertIn("Runtime", categories)
+        self.assertIn("Enhancements", categories)
 
 
 # =============================================================================
@@ -859,6 +861,151 @@ class TestDXVKCheck(unittest.TestCase):
 
         self.assertEqual(vkd3d.status, CheckStatus.PASS)
         self.assertIn("Proton", vkd3d.message)
+
+
+# =============================================================================
+# Test Steam Runtime Checks
+# =============================================================================
+
+class TestSteamRuntimeCheck(unittest.TestCase):
+    """Test Steam Runtime and Pressure Vessel checks"""
+
+    def setUp(self):
+        self.checker = DependencyChecker("Ubuntu", "apt")
+        self.checker.steam_root = "/home/test/.steam/steam"
+
+    @patch('os.path.isdir')
+    def test_runtime_sniper_found(self, mock_isdir):
+        """Test Steam Runtime sniper detected"""
+        def isdir_side_effect(path):
+            return 'sniper' in path.lower()
+        mock_isdir.side_effect = isdir_side_effect
+
+        checks = self.checker.check_steam_runtime()
+        runtime = next(c for c in checks if c.name == "Steam Runtime")
+
+        self.assertEqual(runtime.status, CheckStatus.PASS)
+        self.assertIn("sniper", runtime.message.lower())
+
+    @patch('os.path.isdir')
+    def test_runtime_soldier_found(self, mock_isdir):
+        """Test Steam Runtime soldier detected"""
+        def isdir_side_effect(path):
+            return 'soldier' in path.lower()
+        mock_isdir.side_effect = isdir_side_effect
+
+        checks = self.checker.check_steam_runtime()
+        runtime = next(c for c in checks if c.name == "Steam Runtime")
+
+        self.assertEqual(runtime.status, CheckStatus.PASS)
+        self.assertIn("soldier", runtime.message.lower())
+
+    @patch('os.path.isdir')
+    def test_runtime_not_found(self, mock_isdir):
+        """Test Steam Runtime not found warning"""
+        mock_isdir.return_value = False
+
+        checks = self.checker.check_steam_runtime()
+        runtime = next(c for c in checks if c.name == "Steam Runtime")
+
+        self.assertEqual(runtime.status, CheckStatus.WARNING)
+
+    @patch('os.path.isdir')
+    def test_pressure_vessel_found(self, mock_isdir):
+        """Test Pressure Vessel detected"""
+        def isdir_side_effect(path):
+            return 'pressure-vessel' in path
+        mock_isdir.side_effect = isdir_side_effect
+
+        checks = self.checker.check_steam_runtime()
+        pv = next(c for c in checks if c.name == "Pressure Vessel")
+
+        self.assertEqual(pv.status, CheckStatus.PASS)
+        self.assertIn("available", pv.message.lower())
+
+
+# =============================================================================
+# Test Extra Tools Checks
+# =============================================================================
+
+class TestExtraToolsCheck(unittest.TestCase):
+    """Test vkBasalt, libstrangle, and OBS capture checks"""
+
+    def setUp(self):
+        self.checker = DependencyChecker("Ubuntu", "apt")
+
+    @patch('os.path.isfile')
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_vkbasalt_found_by_lib(self, mock_cmd, mock_isfile):
+        """Test vkBasalt detected by library file"""
+        mock_cmd.return_value = False
+        mock_isfile.side_effect = lambda p: 'vkbasalt' in p.lower()
+
+        checks = self.checker.check_extra_tools()
+        vkbasalt = next(c for c in checks if c.name == "vkBasalt")
+
+        self.assertEqual(vkbasalt.status, CheckStatus.PASS)
+
+    @patch('os.path.isfile')
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_vkbasalt_not_found(self, mock_cmd, mock_isfile):
+        """Test vkBasalt warning when not installed"""
+        mock_cmd.return_value = False
+        mock_isfile.return_value = False
+
+        checks = self.checker.check_extra_tools()
+        vkbasalt = next(c for c in checks if c.name == "vkBasalt")
+
+        self.assertEqual(vkbasalt.status, CheckStatus.WARNING)
+        self.assertIsNotNone(vkbasalt.fix_command)
+
+    @patch('os.path.isfile')
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_libstrangle_found_by_command(self, mock_cmd, mock_isfile):
+        """Test libstrangle detected by command"""
+        mock_cmd.side_effect = lambda c: c == 'strangle'
+        mock_isfile.return_value = False
+
+        checks = self.checker.check_extra_tools()
+        strangle = next(c for c in checks if c.name == "libstrangle")
+
+        self.assertEqual(strangle.status, CheckStatus.PASS)
+
+    @patch('os.path.isfile')
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_libstrangle_not_found(self, mock_cmd, mock_isfile):
+        """Test libstrangle warning when not installed"""
+        mock_cmd.return_value = False
+        mock_isfile.return_value = False
+
+        checks = self.checker.check_extra_tools()
+        strangle = next(c for c in checks if c.name == "libstrangle")
+
+        self.assertEqual(strangle.status, CheckStatus.WARNING)
+
+    @patch('os.path.isfile')
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_obs_capture_found(self, mock_cmd, mock_isfile):
+        """Test OBS capture detected"""
+        mock_cmd.side_effect = lambda c: c == 'obs-vkcapture'
+        mock_isfile.return_value = False
+
+        checks = self.checker.check_extra_tools()
+        obs = next(c for c in checks if c.name == "OBS Game Capture")
+
+        self.assertEqual(obs.status, CheckStatus.PASS)
+
+    @patch('os.path.isfile')
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_obs_capture_not_found(self, mock_cmd, mock_isfile):
+        """Test OBS capture warning when not installed"""
+        mock_cmd.return_value = False
+        mock_isfile.return_value = False
+
+        checks = self.checker.check_extra_tools()
+        obs = next(c for c in checks if c.name == "OBS Game Capture")
+
+        self.assertEqual(obs.status, CheckStatus.WARNING)
 
 
 # =============================================================================

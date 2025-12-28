@@ -480,6 +480,7 @@ class DependencyChecker:
         self.distro = distro
         self.package_manager = package_manager
         self.checks: List[DependencyCheck] = []
+        self.steam_root: Optional[str] = None
 
     def run_command(
         self,
@@ -658,6 +659,7 @@ class DependencyChecker:
 
         # Check Steam root directory
         steam_root = find_steam_root()
+        self.steam_root = steam_root  # Store for other checks
         if steam_root:
             checks.append(DependencyCheck(
                 name="Steam Root",
@@ -1062,6 +1064,194 @@ class DependencyChecker:
 
         return checks
 
+    def check_steam_runtime(self) -> List[DependencyCheck]:
+        """Check Steam Runtime and Pressure Vessel container."""
+        checks = []
+
+        # Check for Steam Runtime (soldier, sniper, etc.)
+        runtime_paths = []
+        if self.steam_root:
+            runtime_paths.extend([
+                os.path.join(self.steam_root, 'ubuntu12_32', 'steam-runtime'),
+                os.path.join(self.steam_root, 'steamapps', 'common', 'SteamLinuxRuntime_soldier'),
+                os.path.join(self.steam_root, 'steamapps', 'common', 'SteamLinuxRuntime_sniper'),
+            ])
+
+        runtime_found = None
+        for path in runtime_paths:
+            if os.path.isdir(path):
+                if 'sniper' in path.lower():
+                    runtime_found = 'sniper'
+                elif 'soldier' in path.lower():
+                    runtime_found = 'soldier'
+                else:
+                    runtime_found = 'legacy'
+                break
+
+        if runtime_found:
+            runtime_names = {
+                'sniper': 'Steam Linux Runtime 3.0 (sniper)',
+                'soldier': 'Steam Linux Runtime 2.0 (soldier)',
+                'legacy': 'Steam Runtime (legacy)',
+            }
+            checks.append(DependencyCheck(
+                name="Steam Runtime",
+                status=CheckStatus.PASS,
+                message=f"{runtime_names.get(runtime_found, 'Found')}",
+                category="Runtime",
+                details="Container runtime for consistent game execution"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="Steam Runtime",
+                status=CheckStatus.WARNING,
+                message="Steam Runtime not found (may be downloaded on first game launch)",
+                category="Runtime",
+                details="Steam will download the runtime when needed"
+            ))
+
+        # Check for Pressure Vessel (container tool)
+        pv_paths = []
+        if self.steam_root:
+            pv_paths.extend([
+                os.path.join(self.steam_root, 'steamapps', 'common', 'SteamLinuxRuntime_soldier', 'pressure-vessel'),
+                os.path.join(self.steam_root, 'steamapps', 'common', 'SteamLinuxRuntime_sniper', 'pressure-vessel'),
+            ])
+
+        pv_found = False
+        for path in pv_paths:
+            if os.path.isdir(path):
+                pv_found = True
+                break
+
+        if pv_found:
+            checks.append(DependencyCheck(
+                name="Pressure Vessel",
+                status=CheckStatus.PASS,
+                message="Container tool available",
+                category="Runtime",
+                details="Used by Steam Runtime to isolate games from host system"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="Pressure Vessel",
+                status=CheckStatus.PASS,
+                message="Will be installed with Steam Runtime",
+                category="Runtime",
+                details="Bundled with Steam Linux Runtime"
+            ))
+
+        return checks
+
+    def check_extra_tools(self) -> List[DependencyCheck]:
+        """Check optional gaming enhancement tools."""
+        checks = []
+
+        # Check vkBasalt (post-processing for Vulkan)
+        vkbasalt_found = False
+        vkbasalt_paths = [
+            '/usr/lib/x86_64-linux-gnu/libvkbasalt.so',
+            '/usr/lib64/libvkbasalt.so',
+            '/usr/lib/libvkbasalt.so',
+            os.path.expanduser('~/.local/share/vkBasalt/libvkbasalt.so'),
+        ]
+        for path in vkbasalt_paths:
+            if os.path.isfile(path):
+                vkbasalt_found = True
+                break
+
+        # Also check if vkbasalt.conf exists
+        if not vkbasalt_found:
+            vkbasalt_found = self.check_command_exists('vkbasalt')
+
+        if vkbasalt_found:
+            checks.append(DependencyCheck(
+                name="vkBasalt",
+                status=CheckStatus.PASS,
+                message="Post-processing layer available",
+                category="Enhancements",
+                details="Use ENABLE_VKBASALT=1 for CAS sharpening, FXAA, SMAA"
+            ))
+        else:
+            vkbasalt_pkg = {
+                'apt': 'vkbasalt',
+                'dnf': 'vkBasalt',
+                'pacman': 'vkbasalt',
+            }.get(self.package_manager, 'vkbasalt')
+
+            checks.append(DependencyCheck(
+                name="vkBasalt",
+                status=CheckStatus.WARNING,
+                message="Not installed (optional post-processing)",
+                category="Enhancements",
+                fix_command=self._get_install_command(vkbasalt_pkg),
+                details="Adds sharpening, FXAA, SMAA to Vulkan games"
+            ))
+
+        # Check libstrangle (FPS limiter)
+        strangle_found = self.check_command_exists('strangle')
+        if not strangle_found:
+            strangle_paths = [
+                '/usr/lib/x86_64-linux-gnu/libstrangle.so',
+                '/usr/lib64/libstrangle.so',
+                '/usr/lib/libstrangle.so',
+            ]
+            for path in strangle_paths:
+                if os.path.isfile(path):
+                    strangle_found = True
+                    break
+
+        if strangle_found:
+            checks.append(DependencyCheck(
+                name="libstrangle",
+                status=CheckStatus.PASS,
+                message="FPS limiter available",
+                category="Enhancements",
+                details="Use 'strangle 60 %command%' to limit FPS"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="libstrangle",
+                status=CheckStatus.WARNING,
+                message="Not installed (optional FPS limiter)",
+                category="Enhancements",
+                details="Limits FPS to reduce power usage and heat"
+            ))
+
+        # Check OBS Vulkan/OpenGL capture
+        obs_vkcapture_found = False
+        obs_capture_paths = [
+            '/usr/lib/x86_64-linux-gnu/obs-plugins/linux-vkcapture.so',
+            '/usr/lib64/obs-plugins/linux-vkcapture.so',
+            '/usr/lib/obs-plugins/linux-vkcapture.so',
+        ]
+        for path in obs_capture_paths:
+            if os.path.isfile(path):
+                obs_vkcapture_found = True
+                break
+
+        if not obs_vkcapture_found:
+            obs_vkcapture_found = self.check_command_exists('obs-vkcapture')
+
+        if obs_vkcapture_found:
+            checks.append(DependencyCheck(
+                name="OBS Game Capture",
+                status=CheckStatus.PASS,
+                message="Vulkan/OpenGL capture available",
+                category="Enhancements",
+                details="Use 'obs-vkcapture %command%' for OBS game capture"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="OBS Game Capture",
+                status=CheckStatus.WARNING,
+                message="Not installed (optional for streaming/recording)",
+                category="Enhancements",
+                details="Enables efficient game capture in OBS Studio"
+            ))
+
+        return checks
+
     def run_all_checks(self) -> List[DependencyCheck]:
         """Run all dependency checks."""
         all_checks: List[DependencyCheck] = []
@@ -1074,6 +1264,8 @@ class DependencyChecker:
         all_checks.extend(self.check_gaming_tools())
         all_checks.extend(self.check_wine())
         all_checks.extend(self.check_dxvk_vkd3d())
+        all_checks.extend(self.check_steam_runtime())
+        all_checks.extend(self.check_extra_tools())
 
         return all_checks
 

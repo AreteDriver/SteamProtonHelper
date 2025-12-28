@@ -110,6 +110,13 @@ When games fail to launch, Steam provides minimal diagnostics. SteamProtonHelper
 
 ### Installation
 
+#### Option 1: Install via pip (Recommended)
+```bash
+pip install git+https://github.com/AreteDriver/SteamProtonHelper.git
+steam-proton-helper
+```
+
+#### Option 2: Clone and run directly
 1. **Clone the repository:**
 ```bash
 git clone https://github.com/AreteDriver/SteamProtonHelper.git
@@ -125,6 +132,13 @@ Or make it executable and run directly:
 ```bash
 chmod +x steam_proton_helper.py
 ./steam_proton_helper.py
+```
+
+#### Option 3: Use the installation script
+```bash
+git clone https://github.com/AreteDriver/SteamProtonHelper.git
+cd SteamProtonHelper
+./install.sh
 ```
 
 ## What It Checks

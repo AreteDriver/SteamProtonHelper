@@ -16,6 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - N/A
 
+## [1.3.0] - 2025-12-28
+
+### Added
+- **--version / -V flag** - Display version from CLI
+- **Shell completions** - Tab completion for Bash, Zsh, and Fish
+- **Steam Runtime check** - Detects soldier/sniper/legacy container runtime
+- **Pressure Vessel check** - Container isolation tool detection
+- **vkBasalt check** - Post-processing layer (CAS, FXAA, SMAA)
+- **libstrangle check** - FPS limiter for power/heat reduction
+- **OBS Game Capture check** - Vulkan/OpenGL capture for streaming
+- 12 new unit tests (112 total)
+- Shell completion installation in install.sh/uninstall.sh
+- completions/ directory with Bash, Zsh, Fish scripts
+
+### Changed
+- New check categories: Runtime, Enhancements
+- Expanded to 23 total checks across 10 categories
+- Updated MANIFEST.in to include completions
+
 ## [1.2.0] - 2025-12-28
 
 ### Added
@@ -85,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/AreteDriver/SteamProtonHelper/releases/tag/v1.0.0

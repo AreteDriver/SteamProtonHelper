@@ -6,7 +6,7 @@ This tool checks dependencies, validates installations, and reports system readi
 for Steam gaming. It does NOT install packages by default.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __author__ = "SteamProtonHelper Contributors"
 
 import argparse

@@ -8,13 +8,17 @@ _steam_proton_helper() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     # All available options
-    opts="--help --version --json --no-color --verbose --fix --apply --dry-run --yes -h -V -v -y"
+    opts="--help --version --json --no-color --verbose --fix --apply --dry-run --yes --game -h -V -v -y"
 
     # Handle options that take arguments
     case "${prev}" in
         --fix)
             # Complete with filenames for --fix
             COMPREPLY=( $(compgen -f -- "${cur}") )
+            return 0
+            ;;
+        --game)
+            # No completion for AppID - user must enter it
             return 0
             ;;
     esac

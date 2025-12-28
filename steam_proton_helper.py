@@ -1271,6 +1271,146 @@ class DependencyChecker:
 
 
 # -----------------------------------------------------------------------------
+# ProtonDB Integration
+# -----------------------------------------------------------------------------
+
+@dataclass
+class ProtonDBInfo:
+    """ProtonDB game compatibility information."""
+    app_id: str
+    tier: str
+    confidence: str
+    score: float
+    total_reports: int
+    trending_tier: Optional[str] = None
+    best_reported_tier: Optional[str] = None
+
+
+def fetch_protondb_info(app_id: str) -> Optional[ProtonDBInfo]:
+    """
+    Fetch game compatibility info from ProtonDB.
+
+    Args:
+        app_id: Steam application ID.
+
+    Returns:
+        ProtonDBInfo if successful, None on error.
+    """
+    import urllib.request
+    import urllib.error
+
+    url = f"https://www.protondb.com/api/v1/reports/summaries/{app_id}.json"
+
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+
+            return ProtonDBInfo(
+                app_id=app_id,
+                tier=data.get('tier', 'unknown'),
+                confidence=data.get('confidence', 'unknown'),
+                score=float(data.get('score', 0)),
+                total_reports=int(data.get('total', 0)),
+                trending_tier=data.get('trendingTier'),
+                best_reported_tier=data.get('bestReportedTier'),
+            )
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None  # Game not found in ProtonDB
+        raise
+    except (urllib.error.URLError, json.JSONDecodeError, ValueError):
+        return None
+
+
+def get_tier_color(tier: str) -> str:
+    """Get color for ProtonDB tier."""
+    tier_colors = {
+        'platinum': Color.CYAN,
+        'gold': Color.YELLOW,
+        'silver': Color.DIM,
+        'bronze': Color.YELLOW,
+        'borked': Color.RED,
+        'pending': Color.BLUE,
+    }
+    return tier_colors.get(tier.lower(), '')
+
+
+def get_tier_symbol(tier: str) -> str:
+    """Get symbol for ProtonDB tier."""
+    tier_symbols = {
+        'platinum': '🏆',
+        'gold': '🥇',
+        'silver': '🥈',
+        'bronze': '🥉',
+        'borked': '💔',
+        'pending': '⏳',
+    }
+    return tier_symbols.get(tier.lower(), '❓')
+
+
+def print_protondb_info(info: ProtonDBInfo, use_color: bool = True) -> None:
+    """Print ProtonDB compatibility info."""
+    tier_color = get_tier_color(info.tier) if use_color else ''
+    reset = Color.END if use_color else ''
+    bold = Color.BOLD if use_color else ''
+
+    symbol = get_tier_symbol(info.tier)
+    tier_display = info.tier.upper()
+
+    print(f"\n{bold}ProtonDB Compatibility for AppID {info.app_id}{reset}")
+    print("─" * 44)
+    print(f"  {symbol} Rating: {tier_color}{tier_display}{reset}")
+    print(f"  📊 Score: {info.score:.2f}")
+    print(f"  📝 Reports: {info.total_reports}")
+    print(f"  🎯 Confidence: {info.confidence}")
+
+    if info.best_reported_tier and info.best_reported_tier != info.tier:
+        best_color = get_tier_color(info.best_reported_tier) if use_color else ''
+        print(f"  ⭐ Best Reported: {best_color}{info.best_reported_tier.upper()}{reset}")
+
+    if info.trending_tier and info.trending_tier != info.tier:
+        trend_color = get_tier_color(info.trending_tier) if use_color else ''
+        print(f"  📈 Trending: {trend_color}{info.trending_tier.upper()}{reset}")
+
+    print()
+
+    # Print tier explanation
+    tier_info = {
+        'platinum': 'Runs perfectly out of the box',
+        'gold': 'Runs perfectly after tweaks',
+        'silver': 'Runs with minor issues',
+        'bronze': 'Runs, but often crashes or has issues',
+        'borked': 'Game does not run or is unplayable',
+        'pending': 'Not enough reports yet',
+    }
+    if info.tier.lower() in tier_info:
+        print(f"  ℹ️  {tier_info[info.tier.lower()]}")
+
+    print(f"\n  🔗 https://www.protondb.com/app/{info.app_id}")
+
+
+def output_protondb_json(info: Optional[ProtonDBInfo], app_id: str) -> None:
+    """Output ProtonDB info as JSON."""
+    if info:
+        data = {
+            'app_id': info.app_id,
+            'tier': info.tier,
+            'score': info.score,
+            'confidence': info.confidence,
+            'total_reports': info.total_reports,
+            'best_reported_tier': info.best_reported_tier,
+            'trending_tier': info.trending_tier,
+            'url': f'https://www.protondb.com/app/{info.app_id}',
+        }
+    else:
+        data = {
+            'app_id': app_id,
+            'error': 'Game not found in ProtonDB',
+        }
+    print(json.dumps(data, indent=2))
+
+
+# -----------------------------------------------------------------------------
 # Output Formatting
 # -----------------------------------------------------------------------------
 
@@ -1824,6 +1964,8 @@ def parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s                  Run all checks with colored output
   %(prog)s --json           Output results as JSON
+  %(prog)s --game 292030    Check ProtonDB rating for The Witcher 3
+  %(prog)s --game 1245620   Check ProtonDB rating for Elden Ring
   %(prog)s --fix            Print fix script to stdout
   %(prog)s --fix fix.sh     Write fix script to file
   %(prog)s --dry-run        Show what --apply would install
@@ -1833,6 +1975,7 @@ Examples:
   %(prog)s --verbose        Show debug information
 
 Note: Use --dry-run to preview before --apply. Requires sudo for installation.
+      Use --game with a Steam AppID to check ProtonDB compatibility.
 """
     )
 
@@ -1886,6 +2029,12 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
         help='Skip confirmation prompt when using --apply'
     )
 
+    parser.add_argument(
+        '--game',
+        metavar='APPID',
+        help='Check ProtonDB compatibility for a Steam game by AppID'
+    )
+
     return parser.parse_args()
 
 
@@ -1899,6 +2048,23 @@ def main() -> int:
 
     global verbose_log
     verbose_log = VerboseLogger(enabled=args.verbose)
+
+    # Handle --game flag (ProtonDB lookup)
+    if args.game:
+        try:
+            info = fetch_protondb_info(args.game)
+            if args.json:
+                output_protondb_json(info, args.game)
+            elif info:
+                print_protondb_info(info, use_color=not args.no_color)
+            else:
+                print(f"Game with AppID {args.game} not found in ProtonDB.")
+                print(f"Check https://store.steampowered.com/app/{args.game} to verify the AppID.")
+                return 1
+            return 0
+        except Exception as e:
+            print(f"Error fetching ProtonDB info: {e}", file=sys.stderr)
+            return 1
 
     try:
         # Detect distro

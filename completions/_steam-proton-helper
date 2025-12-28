@@ -15,6 +15,7 @@ _steam-proton-helper() {
         '--apply[Auto-install missing packages]'
         '--dry-run[Show what --apply would install]'
         '(-y --yes)'{-y,--yes}'[Skip confirmation prompt]'
+        '--game[Check ProtonDB compatibility for Steam game]:appid:'
     )
 
     _arguments -s -S $opts

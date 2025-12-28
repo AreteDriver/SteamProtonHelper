@@ -13,6 +13,7 @@ complete -c steam-proton-helper -l fix -d 'Generate fix script' -r -F
 complete -c steam-proton-helper -l apply -d 'Auto-install missing packages'
 complete -c steam-proton-helper -l dry-run -d 'Show what --apply would install'
 complete -c steam-proton-helper -s y -l yes -d 'Skip confirmation prompt'
+complete -c steam-proton-helper -l game -d 'Check ProtonDB compatibility for Steam game' -r
 
 # Also complete for the .py script
 complete -c steam_proton_helper.py -w steam-proton-helper

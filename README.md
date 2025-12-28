@@ -84,7 +84,7 @@ python3 steam_proton_helper.py
 ## CLI Options
 
 ```
-usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run] [--yes]
+usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run] [--yes] [--game APPID]
 
 Steam Proton Helper - Check system readiness for Steam gaming on Linux.
 
@@ -97,6 +97,7 @@ options:
   --apply        Auto-install missing packages (prompts for confirmation)
   --dry-run      Show what --apply would install without executing
   --yes, -y      Skip confirmation prompt (use with --apply)
+  --game APPID   Check ProtonDB compatibility for a Steam game by AppID
 ```
 
 ### Examples
@@ -132,6 +133,13 @@ options:
 
 # Combine options
 ./steam_proton_helper.py --json 2>/dev/null | jq '.summary'
+
+# Check ProtonDB compatibility for a game (by Steam AppID)
+./steam_proton_helper.py --game 292030    # The Witcher 3
+./steam_proton_helper.py --game 1245620   # Elden Ring
+
+# Get ProtonDB info as JSON
+./steam_proton_helper.py --game 292030 --json
 ```
 
 ### Exit Codes
@@ -181,6 +189,36 @@ cp completions/steam-proton-helper.fish ~/.config/fish/completions/
 ### Graphics
 - **Vulkan**: Runs `vulkaninfo` and checks exit code
 - **OpenGL**: Runs `glxinfo -B` if available
+
+### ProtonDB Integration
+
+Use `--game APPID` to check game compatibility on ProtonDB:
+
+```bash
+# Check The Witcher 3 (AppID: 292030)
+./steam_proton_helper.py --game 292030
+```
+
+Output:
+```
+╔══════════════════════════════════════════╗
+║         ProtonDB Compatibility           ║
+╚══════════════════════════════════════════╝
+
+Game AppID:    292030
+Tier:          🏆 PLATINUM
+Confidence:    strong
+Score:         0.82
+Total Reports: 1234
+Trending:      platinum
+Best Reported: platinum
+
+✓ This game runs well on Linux with Proton!
+```
+
+Find Steam AppIDs at:
+- Store page URL: `https://store.steampowered.com/app/292030/` → AppID is `292030`
+- [SteamDB](https://steamdb.info/)
 
 ### 32-bit / Multilib
 - Architecture support enabled (i386/multilib)

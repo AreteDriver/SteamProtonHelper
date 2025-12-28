@@ -1009,6 +1009,104 @@ class TestExtraToolsCheck(unittest.TestCase):
 
 
 # =============================================================================
+# Test ProtonDB Integration
+# =============================================================================
+
+class TestProtonDBInfo(unittest.TestCase):
+    """Test ProtonDB data class"""
+
+    def test_protondb_info_creation(self):
+        """Test ProtonDBInfo can be created"""
+        from steam_proton_helper import ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="292030",
+            tier="platinum",
+            confidence="strong",
+            score=0.87,
+            total_reports=1624,
+            trending_tier="gold",
+            best_reported_tier="platinum",
+        )
+        self.assertEqual(info.app_id, "292030")
+        self.assertEqual(info.tier, "platinum")
+        self.assertEqual(info.score, 0.87)
+
+
+class TestProtonDBFunctions(unittest.TestCase):
+    """Test ProtonDB helper functions"""
+
+    def test_get_tier_symbol(self):
+        """Test tier symbols"""
+        from steam_proton_helper import get_tier_symbol
+        self.assertEqual(get_tier_symbol("platinum"), "🏆")
+        self.assertEqual(get_tier_symbol("gold"), "🥇")
+        self.assertEqual(get_tier_symbol("silver"), "🥈")
+        self.assertEqual(get_tier_symbol("bronze"), "🥉")
+        self.assertEqual(get_tier_symbol("borked"), "💔")
+
+    def test_get_tier_color(self):
+        """Test tier colors return strings"""
+        from steam_proton_helper import get_tier_color
+        self.assertIsInstance(get_tier_color("platinum"), str)
+        self.assertIsInstance(get_tier_color("gold"), str)
+        self.assertIsInstance(get_tier_color("unknown"), str)
+
+    @patch('urllib.request.urlopen')
+    def test_fetch_protondb_info_success(self, mock_urlopen):
+        """Test successful ProtonDB fetch"""
+        from steam_proton_helper import fetch_protondb_info
+
+        mock_response = unittest.mock.MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "tier": "gold",
+            "confidence": "strong",
+            "score": 0.75,
+            "total": 100,
+            "trendingTier": "platinum",
+            "bestReportedTier": "platinum",
+        }).encode('utf-8')
+        mock_response.__enter__ = lambda s: mock_response
+        mock_response.__exit__ = lambda s, *args: None
+        mock_urlopen.return_value = mock_response
+
+        info = fetch_protondb_info("12345")
+
+        self.assertIsNotNone(info)
+        self.assertEqual(info.tier, "gold")
+        self.assertEqual(info.confidence, "strong")
+        self.assertEqual(info.total_reports, 100)
+
+    @patch('urllib.request.urlopen')
+    def test_fetch_protondb_info_not_found(self, mock_urlopen):
+        """Test ProtonDB fetch for non-existent game"""
+        from steam_proton_helper import fetch_protondb_info
+        import urllib.error
+
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="", code=404, msg="Not Found", hdrs={}, fp=None
+        )
+
+        info = fetch_protondb_info("99999999")
+        self.assertIsNone(info)
+
+
+class TestGameArgument(unittest.TestCase):
+    """Test --game argument parsing"""
+
+    def test_game_argument(self):
+        """Test --game argument is parsed"""
+        with patch('sys.argv', ['prog', '--game', '292030']):
+            args = parse_args()
+            self.assertEqual(args.game, '292030')
+
+    def test_no_game_argument(self):
+        """Test default is None when --game not provided"""
+        with patch('sys.argv', ['prog']):
+            args = parse_args()
+            self.assertIsNone(args.game)
+
+
+# =============================================================================
 # Test Output Functions
 # =============================================================================
 

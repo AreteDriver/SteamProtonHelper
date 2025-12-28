@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- N/A
+- **ProtonDB integration** - Check game compatibility with `--game APPID`
+- Fetch tier rating (platinum/gold/silver/bronze/borked)
+- Display confidence score, total reports, and trending tier
+- JSON output support for ProtonDB queries
+- 7 new unit tests for ProtonDB functionality (119 total)
 
 ### Changed
 - N/A

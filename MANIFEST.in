@@ -5,5 +5,7 @@ include CONTRIBUTING.md
 include EXAMPLES.md
 include requirements.txt
 include install.sh
+include uninstall.sh
 include steam_proton_helper.py
 include test_steam_proton_helper.py
+recursive-include assets *

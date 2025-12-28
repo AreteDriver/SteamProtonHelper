@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steam-proton-helper"
-version = "1.0.0"
+version = "1.1.0"
 description = "A comprehensive Linux tool to help setup Steam and Proton for gaming"
 readme = "README.md"
 requires-python = ">=3.6"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "SteamProtonHelper Contributors"}
 ]
@@ -18,7 +18,6 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Topic :: Games/Entertainment",
     "Topic :: System :: Installation/Setup",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
@@ -40,5 +39,15 @@ Repository = "https://github.com/AreteDriver/SteamProtonHelper"
 [project.scripts]
 steam-proton-helper = "steam_proton_helper:main"
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-timeout>=2.0"]
+
 [tool.setuptools]
 py-modules = ["steam_proton_helper"]
+
+[tool.pytest.ini_options]
+testpaths = ["test_steam_proton_helper.py"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+timeout = 30

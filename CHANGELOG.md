@@ -8,16 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- GitHub Actions CI/CD workflow for automated testing
-- Support for Python 3.6 through 3.12
-- Comprehensive test suite with 14 unit tests
-- Security scanning in CI pipeline
+- N/A
 
 ### Changed
 - N/A
 
 ### Fixed
 - N/A
+
+## [1.1.0] - 2025-12-27
+
+### Added
+- `--fix` option to generate shell scripts with fix commands
+- `--apply` option to auto-install missing packages with confirmation
+- `--dry-run` option to preview what would be installed
+- `--yes` / `-y` flag to skip confirmation prompts
+- `--verbose` / `-v` flag to show debug output
+- `--no-color` flag to disable ANSI colors
+- `--json` flag for machine-readable output
+- VDF parser for Steam library folder detection
+- Multi-library support for Steam installations
+- Desktop integration with install.sh (icon and menu entry)
+- Uninstall script (uninstall.sh)
+- Application icon (SVG and PNG formats)
+- `__version__` module attribute
+- Comprehensive test suite with 88 unit tests
+- pytest configuration in pyproject.toml
+- GitHub Actions CI/CD workflow for automated testing
+- Security scanning in CI pipeline
+
+### Changed
+- Complete code refactor with improved architecture
+- Improved Steam detection (Native, Flatpak, Snap)
+- Enhanced Proton detection across all Steam libraries
+- Better 32-bit/multilib package detection per distro
+- Updated pyproject.toml to use SPDX license format
+
+### Fixed
+- Steam root directory detection for various installation types
+- VDF parsing for unusual file formats
 
 ## [1.0.0] - 2025-12-08
 
@@ -41,5 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/AreteDriver/SteamProtonHelper/releases/tag/v1.0.0

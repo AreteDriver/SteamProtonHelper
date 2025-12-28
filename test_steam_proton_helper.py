@@ -682,6 +682,183 @@ class TestDependencyChecker(unittest.TestCase):
         self.assertIn("Proton", categories)
         self.assertIn("Graphics", categories)
         self.assertIn("32-bit", categories)
+        self.assertIn("Gaming Tools", categories)
+        self.assertIn("Wine", categories)
+        self.assertIn("Compatibility", categories)
+
+
+# =============================================================================
+# Test Gaming Tools Checks
+# =============================================================================
+
+class TestGamingToolsCheck(unittest.TestCase):
+    """Test gaming tools check (GameMode, MangoHud)"""
+
+    def setUp(self):
+        self.checker = DependencyChecker("Ubuntu", "apt")
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    @patch.object(DependencyChecker, 'run_command')
+    def test_gamemode_installed_and_running(self, mock_run, mock_exists):
+        """Test GameMode detected when installed and running"""
+        mock_exists.side_effect = lambda cmd: cmd in ['gamemoded', 'gamemode']
+        mock_run.return_value = (0, "active", "")
+
+        checks = self.checker.check_gaming_tools()
+        gamemode = next(c for c in checks if c.name == "GameMode")
+
+        self.assertEqual(gamemode.status, CheckStatus.PASS)
+        self.assertIn("daemon available", gamemode.message)
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_gamemode_not_installed(self, mock_exists):
+        """Test GameMode warning when not installed"""
+        mock_exists.return_value = False
+
+        checks = self.checker.check_gaming_tools()
+        gamemode = next(c for c in checks if c.name == "GameMode")
+
+        self.assertEqual(gamemode.status, CheckStatus.WARNING)
+        self.assertIn("not installed", gamemode.message)
+        self.assertIsNotNone(gamemode.fix_command)
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_mangohud_installed(self, mock_exists):
+        """Test MangoHud detected when installed"""
+        mock_exists.side_effect = lambda cmd: cmd == 'mangohud'
+
+        checks = self.checker.check_gaming_tools()
+        mangohud = next(c for c in checks if c.name == "MangoHud")
+
+        self.assertEqual(mangohud.status, CheckStatus.PASS)
+        self.assertIn("available", mangohud.message)
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_mangohud_not_installed(self, mock_exists):
+        """Test MangoHud warning when not installed"""
+        mock_exists.return_value = False
+
+        checks = self.checker.check_gaming_tools()
+        mangohud = next(c for c in checks if c.name == "MangoHud")
+
+        self.assertEqual(mangohud.status, CheckStatus.WARNING)
+        self.assertIn("not installed", mangohud.message)
+
+
+# =============================================================================
+# Test Wine Checks
+# =============================================================================
+
+class TestWineCheck(unittest.TestCase):
+    """Test Wine installation check"""
+
+    def setUp(self):
+        self.checker = DependencyChecker("Ubuntu", "apt")
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    @patch.object(DependencyChecker, 'run_command')
+    def test_wine_installed_with_version(self, mock_run, mock_exists):
+        """Test Wine detected with version"""
+        mock_exists.side_effect = lambda cmd: cmd in ['wine', 'winetricks']
+        mock_run.return_value = (0, "wine-9.0", "")
+
+        checks = self.checker.check_wine()
+        wine = next(c for c in checks if c.name == "Wine")
+
+        self.assertEqual(wine.status, CheckStatus.PASS)
+        self.assertIn("wine-9.0", wine.message)
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_wine_not_installed(self, mock_exists):
+        """Test Wine warning when not installed"""
+        mock_exists.return_value = False
+
+        checks = self.checker.check_wine()
+        wine = next(c for c in checks if c.name == "Wine")
+
+        self.assertEqual(wine.status, CheckStatus.WARNING)
+        self.assertIn("optional", wine.message.lower())
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_winetricks_installed(self, mock_exists):
+        """Test Winetricks detected when installed"""
+        mock_exists.side_effect = lambda cmd: cmd == 'winetricks'
+
+        checks = self.checker.check_wine()
+        winetricks = next(c for c in checks if c.name == "Winetricks")
+
+        self.assertEqual(winetricks.status, CheckStatus.PASS)
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    def test_winetricks_not_installed(self, mock_exists):
+        """Test Winetricks warning when not installed"""
+        mock_exists.return_value = False
+
+        checks = self.checker.check_wine()
+        winetricks = next(c for c in checks if c.name == "Winetricks")
+
+        self.assertEqual(winetricks.status, CheckStatus.WARNING)
+
+
+# =============================================================================
+# Test DXVK/VKD3D Checks
+# =============================================================================
+
+class TestDXVKCheck(unittest.TestCase):
+    """Test DXVK and VKD3D-Proton checks"""
+
+    def setUp(self):
+        self.checker = DependencyChecker("Ubuntu", "apt")
+
+    @patch('os.path.isdir')
+    @patch('os.walk')
+    def test_dxvk_standalone_found(self, mock_walk, mock_isdir):
+        """Test standalone DXVK detected"""
+        mock_isdir.return_value = True
+        mock_walk.return_value = [
+            ('/usr/share/dxvk', [], ['d3d11.dll', 'd3d9.dll'])
+        ]
+
+        checks = self.checker.check_dxvk_vkd3d()
+        dxvk = next(c for c in checks if c.name == "DXVK")
+
+        self.assertEqual(dxvk.status, CheckStatus.PASS)
+        self.assertIn("Standalone", dxvk.message)
+
+    @patch('os.path.isdir')
+    def test_dxvk_using_proton(self, mock_isdir):
+        """Test DXVK defaults to Proton's bundled version"""
+        mock_isdir.return_value = False
+
+        checks = self.checker.check_dxvk_vkd3d()
+        dxvk = next(c for c in checks if c.name == "DXVK")
+
+        self.assertEqual(dxvk.status, CheckStatus.PASS)
+        self.assertIn("Proton", dxvk.message)
+
+    @patch('os.path.isdir')
+    def test_vkd3d_standalone_found(self, mock_isdir):
+        """Test standalone VKD3D-Proton detected"""
+        def isdir_side_effect(path):
+            return 'vkd3d-proton' in path
+        mock_isdir.side_effect = isdir_side_effect
+
+        checks = self.checker.check_dxvk_vkd3d()
+        vkd3d = next(c for c in checks if c.name == "VKD3D-Proton")
+
+        self.assertEqual(vkd3d.status, CheckStatus.PASS)
+        self.assertIn("Standalone", vkd3d.message)
+
+    @patch('os.path.isdir')
+    def test_vkd3d_using_proton(self, mock_isdir):
+        """Test VKD3D defaults to Proton's bundled version"""
+        mock_isdir.return_value = False
+
+        checks = self.checker.check_dxvk_vkd3d()
+        vkd3d = next(c for c in checks if c.name == "VKD3D-Proton")
+
+        self.assertEqual(vkd3d.status, CheckStatus.PASS)
+        self.assertIn("Proton", vkd3d.message)
 
 
 # =============================================================================

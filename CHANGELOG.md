@@ -16,6 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - N/A
 
+## [1.2.0] - 2025-12-28
+
+### Added
+- **GameMode check** - Detects GameMode daemon for CPU/IO optimization
+- **MangoHud check** - Detects MangoHud performance overlay
+- **Wine check** - Detects standalone Wine installation and version
+- **Winetricks check** - Detects Winetricks helper tool
+- **DXVK check** - Detects standalone DXVK or Proton's bundled version
+- **VKD3D-Proton check** - Detects DirectX 12 to Vulkan translation layer
+- 12 new unit tests for gaming tools, Wine, and compatibility checks (100 total)
+
+### Changed
+- Expanded check categories: Gaming Tools, Wine, Compatibility
+- Improved help text with Steam launch option examples
+
 ## [1.1.0] - 2025-12-27
 
 ### Added
@@ -70,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/AreteDriver/SteamProtonHelper/releases/tag/v1.0.0

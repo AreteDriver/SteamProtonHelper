@@ -6,7 +6,7 @@ This tool checks dependencies, validates installations, and reports system readi
 for Steam gaming. It does NOT install packages by default.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "SteamProtonHelper Contributors"
 
 import argparse
@@ -856,6 +856,212 @@ class DependencyChecker:
 
         return checks
 
+    def check_gaming_tools(self) -> List[DependencyCheck]:
+        """Check optional gaming performance tools (GameMode, MangoHud)."""
+        checks = []
+
+        # Check GameMode
+        if self.check_command_exists('gamemoded') or self.check_command_exists('gamemode'):
+            # Try to check if gamemoded is running or can be started
+            code, stdout, stderr = self.run_command(['gamemoded', '--status'])
+            if code == 0:
+                checks.append(DependencyCheck(
+                    name="GameMode",
+                    status=CheckStatus.PASS,
+                    message="GameMode daemon available",
+                    category="Gaming Tools",
+                    details="Use 'gamemoderun %command%' in Steam launch options"
+                ))
+            else:
+                checks.append(DependencyCheck(
+                    name="GameMode",
+                    status=CheckStatus.PASS,
+                    message="GameMode installed",
+                    category="Gaming Tools",
+                    details="Use 'gamemoderun %command%' in Steam launch options"
+                ))
+        else:
+            gamemode_pkg = {
+                'apt': 'gamemode',
+                'dnf': 'gamemode',
+                'pacman': 'gamemode',
+            }.get(self.package_manager, 'gamemode')
+
+            checks.append(DependencyCheck(
+                name="GameMode",
+                status=CheckStatus.WARNING,
+                message="GameMode not installed (optional performance optimizer)",
+                category="Gaming Tools",
+                fix_command=self._get_install_command(gamemode_pkg),
+                details="GameMode optimizes CPU governor, I/O priority, and more during gaming"
+            ))
+
+        # Check MangoHud
+        if self.check_command_exists('mangohud'):
+            checks.append(DependencyCheck(
+                name="MangoHud",
+                status=CheckStatus.PASS,
+                message="MangoHud overlay available",
+                category="Gaming Tools",
+                details="Use 'mangohud %command%' or MANGOHUD=1 in Steam launch options"
+            ))
+        else:
+            mangohud_pkg = {
+                'apt': 'mangohud',
+                'dnf': 'mangohud',
+                'pacman': 'mangohud',
+            }.get(self.package_manager, 'mangohud')
+
+            checks.append(DependencyCheck(
+                name="MangoHud",
+                status=CheckStatus.WARNING,
+                message="MangoHud not installed (optional FPS/performance overlay)",
+                category="Gaming Tools",
+                fix_command=self._get_install_command(mangohud_pkg),
+                details="MangoHud shows FPS, CPU/GPU stats, and frame timing"
+            ))
+
+        return checks
+
+    def check_wine(self) -> List[DependencyCheck]:
+        """Check Wine installation (used by some games and tools)."""
+        checks = []
+
+        # Check for Wine
+        wine_found = False
+        wine_version = None
+
+        if self.check_command_exists('wine'):
+            wine_found = True
+            code, stdout, stderr = self.run_command(['wine', '--version'])
+            if code == 0 and stdout:
+                wine_version = stdout.strip()
+
+        if self.check_command_exists('wine64'):
+            wine_found = True
+            if not wine_version:
+                code, stdout, stderr = self.run_command(['wine64', '--version'])
+                if code == 0 and stdout:
+                    wine_version = stdout.strip()
+
+        if wine_found:
+            checks.append(DependencyCheck(
+                name="Wine",
+                status=CheckStatus.PASS,
+                message=f"Wine installed ({wine_version})" if wine_version else "Wine installed",
+                category="Wine",
+                details="Wine is used by some games and compatibility tools"
+            ))
+        else:
+            wine_pkg = {
+                'apt': 'wine',
+                'dnf': 'wine',
+                'pacman': 'wine',
+            }.get(self.package_manager, 'wine')
+
+            checks.append(DependencyCheck(
+                name="Wine",
+                status=CheckStatus.WARNING,
+                message="Wine not installed (optional, Proton includes its own)",
+                category="Wine",
+                fix_command=self._get_install_command(wine_pkg),
+                details="Most Steam games use Proton's bundled Wine; standalone Wine is optional"
+            ))
+
+        # Check for Winetricks
+        if self.check_command_exists('winetricks'):
+            checks.append(DependencyCheck(
+                name="Winetricks",
+                status=CheckStatus.PASS,
+                message="Winetricks available",
+                category="Wine",
+                details="Useful for installing Windows components in Wine prefixes"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="Winetricks",
+                status=CheckStatus.WARNING,
+                message="Winetricks not installed (optional helper tool)",
+                category="Wine",
+                fix_command=self._get_install_command('winetricks'),
+                details="Winetricks helps install Windows DLLs and components"
+            ))
+
+        return checks
+
+    def check_dxvk_vkd3d(self) -> List[DependencyCheck]:
+        """Check DXVK and VKD3D-Proton availability."""
+        checks = []
+
+        # Note: DXVK and VKD3D are bundled with Proton, so these are informational
+        # We check for standalone installations which some users prefer
+
+        # Check for standalone DXVK
+        dxvk_paths = [
+            os.path.expanduser('~/.local/share/dxvk'),
+            '/usr/share/dxvk',
+            os.path.expanduser('~/.steam/root/compatibilitytools.d'),
+        ]
+
+        dxvk_found = False
+        for path in dxvk_paths:
+            if os.path.isdir(path):
+                # Look for DXVK DLLs
+                for root, dirs, files in os.walk(path):
+                    if any(f.startswith('d3d') and f.endswith('.dll') for f in files):
+                        dxvk_found = True
+                        break
+                if dxvk_found:
+                    break
+
+        if dxvk_found:
+            checks.append(DependencyCheck(
+                name="DXVK",
+                status=CheckStatus.PASS,
+                message="Standalone DXVK installation found",
+                category="Compatibility",
+                details="DXVK translates D3D9/10/11 to Vulkan"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="DXVK",
+                status=CheckStatus.PASS,
+                message="Using Proton's bundled DXVK (recommended)",
+                category="Compatibility",
+                details="Proton includes DXVK; standalone installation is optional"
+            ))
+
+        # Check for VKD3D-Proton (DirectX 12 to Vulkan)
+        vkd3d_paths = [
+            os.path.expanduser('~/.local/share/vkd3d-proton'),
+            '/usr/share/vkd3d-proton',
+        ]
+
+        vkd3d_found = False
+        for path in vkd3d_paths:
+            if os.path.isdir(path):
+                vkd3d_found = True
+                break
+
+        if vkd3d_found:
+            checks.append(DependencyCheck(
+                name="VKD3D-Proton",
+                status=CheckStatus.PASS,
+                message="Standalone VKD3D-Proton found",
+                category="Compatibility",
+                details="VKD3D-Proton translates DirectX 12 to Vulkan"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="VKD3D-Proton",
+                status=CheckStatus.PASS,
+                message="Using Proton's bundled VKD3D (recommended)",
+                category="Compatibility",
+                details="Proton includes VKD3D-Proton; standalone installation is optional"
+            ))
+
+        return checks
+
     def run_all_checks(self) -> List[DependencyCheck]:
         """Run all dependency checks."""
         all_checks: List[DependencyCheck] = []
@@ -865,6 +1071,9 @@ class DependencyChecker:
         all_checks.extend(self.check_proton())
         all_checks.extend(self.check_graphics())
         all_checks.extend(self.check_32bit_support())
+        all_checks.extend(self.check_gaming_tools())
+        all_checks.extend(self.check_wine())
+        all_checks.extend(self.check_dxvk_vkd3d())
 
         return all_checks
 

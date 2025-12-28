@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steam-proton-helper"
-version = "1.1.0"
+version = "1.2.0"
 description = "A comprehensive Linux tool to help setup Steam and Proton for gaming"
 readme = "README.md"
 requires-python = ">=3.6"

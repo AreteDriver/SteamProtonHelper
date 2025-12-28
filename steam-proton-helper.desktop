@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Steam Proton Helper
+GenericName=Gaming Dependency Checker
+Comment=Check system readiness for Steam and Proton gaming on Linux
+Exec=steam-proton-helper
+Icon=steam-proton-helper
+Terminal=true
+Type=Application
+Categories=Game;Utility;System;
+Keywords=steam;proton;gaming;linux;wine;vulkan;checker;
+StartupNotify=false

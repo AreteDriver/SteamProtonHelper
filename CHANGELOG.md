@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- N/A
+- **Game name search** - `--game` now accepts game names, not just AppIDs
+- Steam Store API integration for game name resolution
+- Shows multiple matches when search is ambiguous
+- 11 new unit tests for game name lookup (130 total)
 
 ### Changed
 - N/A

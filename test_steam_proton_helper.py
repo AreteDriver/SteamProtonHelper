@@ -45,6 +45,9 @@ from steam_proton_helper import (
     collect_fix_actions,
     show_dry_run,
     apply_fixes,
+    SteamApp,
+    search_steam_games,
+    resolve_game_input,
 )
 
 
@@ -1104,6 +1107,146 @@ class TestGameArgument(unittest.TestCase):
         with patch('sys.argv', ['prog']):
             args = parse_args()
             self.assertIsNone(args.game)
+
+    def test_game_argument_with_name(self):
+        """Test --game with a game name"""
+        with patch('sys.argv', ['prog', '--game', 'Elden Ring']):
+            args = parse_args()
+            self.assertEqual(args.game, 'Elden Ring')
+
+
+class TestSteamApp(unittest.TestCase):
+    """Test SteamApp dataclass"""
+
+    def test_steam_app_creation(self):
+        """Test SteamApp can be created"""
+        app = SteamApp(appid=292030, name="The Witcher 3: Wild Hunt")
+        self.assertEqual(app.appid, 292030)
+        self.assertEqual(app.name, "The Witcher 3: Wild Hunt")
+
+
+class TestSearchSteamGames(unittest.TestCase):
+    """Test Steam game search functionality"""
+
+    @patch('urllib.request.urlopen')
+    def test_search_steam_games_success(self, mock_urlopen):
+        """Test successful game search"""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "total": 2,
+            "items": [
+                {"type": "app", "id": 292030, "name": "The Witcher 3: Wild Hunt"},
+                {"type": "app", "id": 20920, "name": "The Witcher 2"},
+            ]
+        }).encode('utf-8')
+        mock_response.__enter__ = lambda s: mock_response
+        mock_response.__exit__ = lambda s, *args: None
+        mock_urlopen.return_value = mock_response
+
+        results = search_steam_games("witcher")
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0].appid, 292030)
+        self.assertEqual(results[0].name, "The Witcher 3: Wild Hunt")
+
+    @patch('urllib.request.urlopen')
+    def test_search_steam_games_filters_dlc(self, mock_urlopen):
+        """Test that DLC and packages are filtered out"""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "total": 3,
+            "items": [
+                {"type": "app", "id": 292030, "name": "The Witcher 3"},
+                {"type": "sub", "id": 124923, "name": "Witcher Complete Edition"},
+                {"type": "app", "id": 378648, "name": "Blood and Wine DLC"},
+            ]
+        }).encode('utf-8')
+        mock_response.__enter__ = lambda s: mock_response
+        mock_response.__exit__ = lambda s, *args: None
+        mock_urlopen.return_value = mock_response
+
+        results = search_steam_games("witcher")
+        # Should only include type="app"
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all(isinstance(r, SteamApp) for r in results))
+
+    @patch('urllib.request.urlopen')
+    def test_search_steam_games_empty(self, mock_urlopen):
+        """Test search with no results"""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "total": 0,
+            "items": []
+        }).encode('utf-8')
+        mock_response.__enter__ = lambda s: mock_response
+        mock_response.__exit__ = lambda s, *args: None
+        mock_urlopen.return_value = mock_response
+
+        results = search_steam_games("xyznonexistent")
+        self.assertEqual(len(results), 0)
+
+    @patch('urllib.request.urlopen')
+    def test_search_steam_games_network_error(self, mock_urlopen):
+        """Test search handles network errors gracefully"""
+        import urllib.error
+        mock_urlopen.side_effect = urllib.error.URLError("Network error")
+
+        results = search_steam_games("witcher")
+        self.assertEqual(len(results), 0)
+
+
+class TestResolveGameInput(unittest.TestCase):
+    """Test game input resolution"""
+
+    def test_resolve_numeric_appid(self):
+        """Test that numeric input is treated as AppID"""
+        app_id, game_name, matches = resolve_game_input("292030")
+        self.assertEqual(app_id, "292030")
+        self.assertIsNone(game_name)
+        self.assertEqual(matches, [])
+
+    @patch('steam_proton_helper.search_steam_games')
+    def test_resolve_single_match(self, mock_search):
+        """Test resolution with single match"""
+        mock_search.return_value = [
+            SteamApp(appid=1245620, name="ELDEN RING")
+        ]
+        app_id, game_name, matches = resolve_game_input("elden ring")
+        self.assertEqual(app_id, "1245620")
+        self.assertEqual(game_name, "ELDEN RING")
+        self.assertEqual(matches, [])
+
+    @patch('steam_proton_helper.search_steam_games')
+    def test_resolve_multiple_matches(self, mock_search):
+        """Test resolution with multiple matches"""
+        mock_search.return_value = [
+            SteamApp(appid=292030, name="The Witcher 3: Wild Hunt"),
+            SteamApp(appid=378648, name="The Witcher 3: Blood and Wine"),
+        ]
+        app_id, game_name, matches = resolve_game_input("witcher 3")
+        self.assertIsNone(app_id)
+        self.assertIsNone(game_name)
+        self.assertEqual(len(matches), 2)
+
+    @patch('steam_proton_helper.search_steam_games')
+    def test_resolve_exact_match_from_multiple(self, mock_search):
+        """Test that exact match is selected from multiple results"""
+        mock_search.return_value = [
+            SteamApp(appid=1245620, name="ELDEN RING"),
+            SteamApp(appid=999999, name="ELDEN RING Deluxe"),
+        ]
+        app_id, game_name, matches = resolve_game_input("ELDEN RING")
+        self.assertEqual(app_id, "1245620")
+        self.assertEqual(game_name, "ELDEN RING")
+        self.assertEqual(matches, [])
+
+    @patch('steam_proton_helper.search_steam_games')
+    def test_resolve_no_matches(self, mock_search):
+        """Test resolution with no matches"""
+        mock_search.return_value = []
+        app_id, game_name, matches = resolve_game_input("nonexistent game xyz")
+        self.assertIsNone(app_id)
+        self.assertIsNone(game_name)
+        self.assertEqual(matches, [])
 
 
 # =============================================================================

@@ -97,7 +97,7 @@ options:
   --apply        Auto-install missing packages (prompts for confirmation)
   --dry-run      Show what --apply would install without executing
   --yes, -y      Skip confirmation prompt (use with --apply)
-  --game APPID   Check ProtonDB compatibility for a Steam game by AppID
+  --game NAME    Check ProtonDB compatibility by game name or AppID
 ```
 
 ### Examples
@@ -134,12 +134,16 @@ options:
 # Combine options
 ./steam_proton_helper.py --json 2>/dev/null | jq '.summary'
 
-# Check ProtonDB compatibility for a game (by Steam AppID)
+# Check ProtonDB compatibility by game name
+./steam_proton_helper.py --game "elden ring"
+./steam_proton_helper.py --game "The Witcher 3: Wild Hunt"
+
+# Or by Steam AppID
 ./steam_proton_helper.py --game 292030    # The Witcher 3
 ./steam_proton_helper.py --game 1245620   # Elden Ring
 
 # Get ProtonDB info as JSON
-./steam_proton_helper.py --game 292030 --json
+./steam_proton_helper.py --game "elden ring" --json
 ```
 
 ### Exit Codes
@@ -192,33 +196,44 @@ cp completions/steam-proton-helper.fish ~/.config/fish/completions/
 
 ### ProtonDB Integration
 
-Use `--game APPID` to check game compatibility on ProtonDB:
+Use `--game` to check game compatibility on ProtonDB. You can search by name or AppID:
 
 ```bash
-# Check The Witcher 3 (AppID: 292030)
+# Search by game name
+./steam_proton_helper.py --game "elden ring"
+
+# Or use Steam AppID directly
 ./steam_proton_helper.py --game 292030
 ```
 
 Output:
 ```
-╔══════════════════════════════════════════╗
-║         ProtonDB Compatibility           ║
-╚══════════════════════════════════════════╝
+Found: ELDEN RING (AppID: 1245620)
 
-Game AppID:    292030
-Tier:          🏆 PLATINUM
-Confidence:    strong
-Score:         0.82
-Total Reports: 1234
-Trending:      platinum
-Best Reported: platinum
+ProtonDB Compatibility for AppID 1245620
+────────────────────────────────────────────
+  🥇 Rating: GOLD
+  📊 Score: 0.77
+  📝 Reports: 1935
+  🎯 Confidence: strong
+  ⭐ Best Reported: PLATINUM
+  📈 Trending: PLATINUM
 
-✓ This game runs well on Linux with Proton!
+  ℹ️  Runs perfectly after tweaks
+
+  🔗 https://www.protondb.com/app/1245620
 ```
 
-Find Steam AppIDs at:
-- Store page URL: `https://store.steampowered.com/app/292030/` → AppID is `292030`
-- [SteamDB](https://steamdb.info/)
+If multiple games match your search, you'll see a list:
+```
+Multiple games found for 'witcher':
+
+  1. The Witcher 3: Wild Hunt (AppID: 292030)
+  2. The Witcher 2: Assassins of Kings (AppID: 20920)
+  3. The Witcher: Enhanced Edition (AppID: 20900)
+
+Use --game <AppID> for the specific game.
+```
 
 ### 32-bit / Multilib
 - Architecture support enabled (i386/multilib)

@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Game name search** - `--game` now accepts game names, not just AppIDs
+- **Batch check** - Check multiple games with `--game A --game B` or `--game "A,B"`
 - Steam Store API integration for game name resolution
 - Shows multiple matches when search is ambiguous
-- 11 new unit tests for game name lookup (130 total)
+- JSON output for batch queries includes all games and errors
+- 13 new unit tests (132 total)
 
 ### Changed
 - N/A

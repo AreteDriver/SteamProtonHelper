@@ -2043,20 +2043,22 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                     Run all checks with colored output
-  %(prog)s --json              Output results as JSON
-  %(prog)s --game "elden ring" Check ProtonDB rating by game name
-  %(prog)s --game 292030       Check ProtonDB rating by AppID
-  %(prog)s --fix               Print fix script to stdout
-  %(prog)s --fix fix.sh        Write fix script to file
-  %(prog)s --dry-run           Show what --apply would install
-  %(prog)s --apply             Install missing packages (prompts for confirmation)
-  %(prog)s --apply -y          Install without confirmation prompt
-  %(prog)s --no-color          Disable colored output
-  %(prog)s --verbose           Show debug information
+  %(prog)s                       Run all checks with colored output
+  %(prog)s --json                Output results as JSON
+  %(prog)s --game "elden ring"   Check ProtonDB rating by game name
+  %(prog)s --game 292030         Check ProtonDB rating by AppID
+  %(prog)s --game A --game B     Check multiple games
+  %(prog)s --fix                 Print fix script to stdout
+  %(prog)s --fix fix.sh          Write fix script to file
+  %(prog)s --dry-run             Show what --apply would install
+  %(prog)s --apply               Install missing packages (prompts for confirmation)
+  %(prog)s --apply -y            Install without confirmation prompt
+  %(prog)s --no-color            Disable colored output
+  %(prog)s --verbose             Show debug information
 
 Note: Use --dry-run to preview before --apply. Requires sudo for installation.
       Use --game with a game name or Steam AppID to check ProtonDB compatibility.
+      Multiple games can be checked with repeated --game flags or comma-separated AppIDs.
 """
     )
 
@@ -2113,7 +2115,8 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
     parser.add_argument(
         '--game',
         metavar='NAME',
-        help='Check ProtonDB compatibility by game name or AppID'
+        action='append',
+        help='Check ProtonDB compatibility by game name or AppID (can be used multiple times)'
     )
 
     return parser.parse_args()
@@ -2132,55 +2135,118 @@ def main() -> int:
 
     # Handle --game flag (ProtonDB lookup)
     if args.game:
-        try:
-            # Resolve game input (AppID or name)
-            app_id, game_name, matches = resolve_game_input(args.game)
-
-            # Handle multiple matches
-            if matches:
-                if args.json:
-                    print(json.dumps({
-                        "error": "multiple_matches",
-                        "query": args.game,
-                        "matches": [{"appid": m.appid, "name": m.name} for m in matches]
-                    }, indent=2))
-                else:
-                    print(f"Multiple games found for '{args.game}':\n")
-                    for i, m in enumerate(matches, 1):
-                        print(f"  {i}. {m.name} (AppID: {m.appid})")
-                    print(f"\nUse --game <AppID> for the specific game.")
-                return 1
-
-            # Handle no matches
-            if not app_id:
-                if args.json:
-                    print(json.dumps({
-                        "error": "not_found",
-                        "query": args.game,
-                        "message": f"No games found matching '{args.game}'"
-                    }, indent=2))
-                else:
-                    print(f"No games found matching '{args.game}'.")
-                    print("Try a different search term or use --game <AppID> directly.")
-                return 1
-
-            # Show resolved game name if searched by name
-            if game_name and not args.json:
-                print(f"Found: {game_name} (AppID: {app_id})\n")
-
-            info = fetch_protondb_info(app_id)
-            if args.json:
-                output_protondb_json(info, app_id)
-            elif info:
-                print_protondb_info(info, use_color=not args.no_color)
+        # Expand comma-separated values and flatten the list
+        games_to_check = []
+        for game_arg in args.game:
+            # Split by comma, but be careful with game names containing commas
+            # Only split if the result looks like multiple entries (no spaces around commas)
+            if ',' in game_arg and not any(c.isalpha() for c in game_arg.split(',')[0][-1:]):
+                # Likely comma-separated AppIDs like "292030,1245620"
+                games_to_check.extend([g.strip() for g in game_arg.split(',') if g.strip()])
             else:
-                print(f"Game with AppID {app_id} not found in ProtonDB.")
-                print(f"Check https://store.steampowered.com/app/{app_id} to verify the AppID.")
-                return 1
-            return 0
-        except Exception as e:
-            print(f"Error fetching ProtonDB info: {e}", file=sys.stderr)
-            return 1
+                games_to_check.append(game_arg)
+
+        # Process each game
+        results = []
+        errors = []
+        use_color = not args.no_color
+
+        for game_input in games_to_check:
+            try:
+                # Resolve game input (AppID or name)
+                app_id, game_name, matches = resolve_game_input(game_input)
+
+                # Handle multiple matches
+                if matches:
+                    errors.append({
+                        "query": game_input,
+                        "error": "multiple_matches",
+                        "matches": [{"appid": m.appid, "name": m.name} for m in matches]
+                    })
+                    continue
+
+                # Handle no matches
+                if not app_id:
+                    errors.append({
+                        "query": game_input,
+                        "error": "not_found",
+                        "message": f"No games found matching '{game_input}'"
+                    })
+                    continue
+
+                # Fetch ProtonDB info
+                info = fetch_protondb_info(app_id)
+                results.append({
+                    "query": game_input,
+                    "app_id": app_id,
+                    "game_name": game_name,
+                    "info": info
+                })
+
+            except Exception as e:
+                errors.append({
+                    "query": game_input,
+                    "error": "fetch_error",
+                    "message": str(e)
+                })
+
+        # Output results
+        if args.json:
+            output = {
+                "games": [],
+                "errors": errors
+            }
+            for r in results:
+                if r["info"]:
+                    output["games"].append({
+                        "query": r["query"],
+                        "app_id": r["app_id"],
+                        "name": r["game_name"] or r["query"],
+                        "tier": r["info"].tier,
+                        "score": r["info"].score,
+                        "confidence": r["info"].confidence,
+                        "total_reports": r["info"].total_reports,
+                        "best_reported_tier": r["info"].best_reported_tier,
+                        "trending_tier": r["info"].trending_tier,
+                        "url": f"https://www.protondb.com/app/{r['app_id']}"
+                    })
+                else:
+                    output["errors"].append({
+                        "query": r["query"],
+                        "app_id": r["app_id"],
+                        "error": "not_in_protondb"
+                    })
+            print(json.dumps(output, indent=2))
+        else:
+            # Print results for each game
+            for i, r in enumerate(results):
+                if i > 0:
+                    print()  # Separator between games
+
+                if r["game_name"]:
+                    print(f"Found: {r['game_name']} (AppID: {r['app_id']})\n")
+
+                if r["info"]:
+                    print_protondb_info(r["info"], use_color=use_color)
+                else:
+                    print(f"Game with AppID {r['app_id']} not found in ProtonDB.")
+                    print(f"Check https://store.steampowered.com/app/{r['app_id']}")
+
+            # Print errors
+            for err in errors:
+                print()
+                if err["error"] == "multiple_matches":
+                    print(f"Multiple games found for '{err['query']}':")
+                    for j, m in enumerate(err["matches"], 1):
+                        print(f"  {j}. {m['name']} (AppID: {m['appid']})")
+                    print("Use --game <AppID> for the specific game.")
+                elif err["error"] == "not_found":
+                    print(f"No games found matching '{err['query']}'.")
+                else:
+                    print(f"Error checking '{err['query']}': {err.get('message', 'Unknown error')}")
+
+        # Return 1 if any errors, 0 if all succeeded
+        return 1 if errors else 0
 
     try:
         # Detect distro

@@ -1100,7 +1100,7 @@ class TestGameArgument(unittest.TestCase):
         """Test --game argument is parsed"""
         with patch('sys.argv', ['prog', '--game', '292030']):
             args = parse_args()
-            self.assertEqual(args.game, '292030')
+            self.assertEqual(args.game, ['292030'])
 
     def test_no_game_argument(self):
         """Test default is None when --game not provided"""
@@ -1112,7 +1112,19 @@ class TestGameArgument(unittest.TestCase):
         """Test --game with a game name"""
         with patch('sys.argv', ['prog', '--game', 'Elden Ring']):
             args = parse_args()
-            self.assertEqual(args.game, 'Elden Ring')
+            self.assertEqual(args.game, ['Elden Ring'])
+
+    def test_multiple_game_arguments(self):
+        """Test multiple --game arguments"""
+        with patch('sys.argv', ['prog', '--game', '292030', '--game', '1245620']):
+            args = parse_args()
+            self.assertEqual(args.game, ['292030', '1245620'])
+
+    def test_game_argument_comma_separated(self):
+        """Test comma-separated game IDs are accepted"""
+        with patch('sys.argv', ['prog', '--game', '292030,1245620']):
+            args = parse_args()
+            self.assertEqual(args.game, ['292030,1245620'])
 
 
 class TestSteamApp(unittest.TestCase):

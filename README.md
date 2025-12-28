@@ -142,8 +142,13 @@ options:
 ./steam_proton_helper.py --game 292030    # The Witcher 3
 ./steam_proton_helper.py --game 1245620   # Elden Ring
 
+# Check multiple games at once
+./steam_proton_helper.py --game "elden ring" --game "baldurs gate 3"
+./steam_proton_helper.py --game "292030,1245620"  # Comma-separated AppIDs
+
 # Get ProtonDB info as JSON
 ./steam_proton_helper.py --game "elden ring" --json
+./steam_proton_helper.py --game 292030 --game 1245620 --json  # Batch JSON
 ```
 
 ### Exit Codes

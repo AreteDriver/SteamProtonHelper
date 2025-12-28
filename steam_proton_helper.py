@@ -1,427 +1,1134 @@
 #!/usr/bin/env python3
 """
-Steam Proton Helper - A tool to help setup Steam and Proton on Linux
-Checks dependencies, installs missing packages, and verifies setup
+Steam Proton Helper - A non-destructive checker for Steam/Proton readiness on Linux.
+
+This tool checks dependencies, validates installations, and reports system readiness
+for Steam gaming. It does NOT install packages by default.
 """
 
+import argparse
+import json
 import os
-import sys
-import subprocess
-import shutil
 import platform
-from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field, asdict
 from enum import Enum
+from typing import List, Dict, Tuple, Optional, Any
 
+
+# -----------------------------------------------------------------------------
+# Enums and Data Classes
+# -----------------------------------------------------------------------------
 
 class CheckStatus(Enum):
-    """Status of a dependency check"""
-    PASS = "✓"
-    FAIL = "✗"
-    WARNING = "⚠"
-    SKIPPED = "○"
+    """Status of a dependency check."""
+    PASS = "PASS"
+    FAIL = "FAIL"
+    WARNING = "WARN"
+    SKIPPED = "SKIP"
 
+
+class SteamVariant(Enum):
+    """Steam installation variant."""
+    NATIVE = "native"
+    FLATPAK = "flatpak"
+    SNAP = "snap"
+    NONE = "none"
+
+
+@dataclass
+class DependencyCheck:
+    """Result of a dependency check."""
+    name: str
+    status: CheckStatus
+    message: str
+    category: str = "General"
+    fix_command: Optional[str] = None
+    details: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        return {
+            "name": self.name,
+            "status": self.status.value,
+            "message": self.message,
+            "category": self.category,
+            "fix_command": self.fix_command,
+            "details": self.details,
+        }
+
+
+@dataclass
+class ProtonInstall:
+    """Information about a Proton installation."""
+    name: str
+    path: str
+    has_executable: bool
+    has_toolmanifest: bool
+    has_version: bool
+
+
+# -----------------------------------------------------------------------------
+# Color Output
+# -----------------------------------------------------------------------------
 
 class Color:
-    """ANSI color codes for terminal output"""
+    """ANSI color codes for terminal output."""
     GREEN = '\033[92m'
     RED = '\033[91m'
     YELLOW = '\033[93m'
     BLUE = '\033[94m'
     CYAN = '\033[96m'
     BOLD = '\033[1m'
+    DIM = '\033[2m'
     END = '\033[0m'
 
+    _enabled = True
 
-@dataclass
-class DependencyCheck:
-    """Result of a dependency check"""
-    name: str
-    status: CheckStatus
-    message: str
-    fix_command: Optional[str] = None
+    @classmethod
+    def disable(cls) -> None:
+        """Disable all color output."""
+        cls.GREEN = ''
+        cls.RED = ''
+        cls.YELLOW = ''
+        cls.BLUE = ''
+        cls.CYAN = ''
+        cls.BOLD = ''
+        cls.DIM = ''
+        cls.END = ''
+        cls._enabled = False
 
+    @classmethod
+    def is_enabled(cls) -> bool:
+        """Check if colors are enabled."""
+        return cls._enabled
+
+
+# -----------------------------------------------------------------------------
+# Verbose Logger
+# -----------------------------------------------------------------------------
+
+class VerboseLogger:
+    """Logger that only outputs when verbose mode is enabled."""
+
+    def __init__(self, enabled: bool = False):
+        self.enabled = enabled
+
+    def log(self, message: str) -> None:
+        """Log a verbose message."""
+        if self.enabled:
+            print(f"{Color.DIM}[DEBUG] {message}{Color.END}")
+
+
+# Global logger instance
+verbose_log = VerboseLogger()
+
+
+# -----------------------------------------------------------------------------
+# VDF Parser (Minimal implementation for libraryfolders.vdf)
+# -----------------------------------------------------------------------------
+
+def parse_libraryfolders_vdf(filepath: str) -> List[str]:
+    """
+    Parse Steam's libraryfolders.vdf to extract library paths.
+
+    This is a minimal VDF parser that extracts quoted strings under "path" keys.
+    Valve's VDF format is similar to JSON but uses a different syntax.
+
+    Args:
+        filepath: Path to libraryfolders.vdf
+
+    Returns:
+        List of library paths found in the file.
+    """
+    paths: List[str] = []
+    verbose_log.log(f"Parsing VDF file: {filepath}")
+
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+
+        # Match "path" followed by whitespace and a quoted string
+        # Pattern handles both: "path"		"/path/to/lib" and "path" "/path"
+        pattern = r'"path"\s+"([^"]+)"'
+        matches = re.findall(pattern, content, re.IGNORECASE)
+
+        for match in matches:
+            expanded = os.path.expanduser(match)
+            resolved = os.path.realpath(expanded)
+            if os.path.isdir(resolved):
+                paths.append(resolved)
+                verbose_log.log(f"  Found library path: {resolved}")
+            else:
+                verbose_log.log(f"  Path not a directory, skipping: {resolved}")
+
+    except FileNotFoundError:
+        verbose_log.log(f"  VDF file not found: {filepath}")
+    except PermissionError:
+        verbose_log.log(f"  Permission denied reading: {filepath}")
+    except Exception as e:
+        verbose_log.log(f"  Error parsing VDF: {e}")
+
+    return paths
+
+
+# -----------------------------------------------------------------------------
+# Distribution Detection
+# -----------------------------------------------------------------------------
 
 class DistroDetector:
-    """Detect Linux distribution and package manager"""
-    
+    """Detect Linux distribution and package manager."""
+
     @staticmethod
     def detect_distro() -> Tuple[str, str]:
         """
-        Detect the Linux distribution
-        Returns: (distro_name, package_manager)
+        Detect the Linux distribution.
+
+        Returns:
+            Tuple of (distro_name, package_manager)
         """
         try:
-            # Try to read /etc/os-release
             if os.path.exists('/etc/os-release'):
                 with open('/etc/os-release', 'r') as f:
-                    lines = f.readlines()
                     distro_info = {}
-                    for line in lines:
+                    for line in f:
                         if '=' in line:
                             key, value = line.strip().split('=', 1)
                             distro_info[key] = value.strip('"')
-                    
+
                     distro_id = distro_info.get('ID', '').lower()
                     distro_like = distro_info.get('ID_LIKE', '').lower()
-                    
+                    distro_name = distro_info.get('PRETTY_NAME', distro_id)
+
                     # Determine package manager
-                    if distro_id in ['ubuntu', 'debian', 'mint', 'pop'] or 'debian' in distro_like or 'ubuntu' in distro_like:
-                        return (distro_id, 'apt')
-                    elif distro_id in ['fedora', 'rhel', 'centos'] or 'fedora' in distro_like:
-                        return (distro_id, 'dnf')
-                    elif distro_id in ['arch', 'manjaro', 'endeavouros'] or 'arch' in distro_like:
-                        return (distro_id, 'pacman')
-                    elif distro_id in ['opensuse', 'suse']:
-                        return (distro_id, 'zypper')
-            
+                    if distro_id in ['ubuntu', 'debian', 'mint', 'pop', 'linuxmint', 'elementary'] \
+                            or 'debian' in distro_like or 'ubuntu' in distro_like:
+                        return (distro_name, 'apt')
+                    elif distro_id in ['fedora', 'rhel', 'centos', 'rocky', 'alma'] \
+                            or 'fedora' in distro_like or 'rhel' in distro_like:
+                        return (distro_name, 'dnf')
+                    elif distro_id in ['arch', 'manjaro', 'endeavouros', 'garuda', 'artix'] \
+                            or 'arch' in distro_like:
+                        return (distro_name, 'pacman')
+                    elif distro_id in ['opensuse', 'suse', 'opensuse-leap', 'opensuse-tumbleweed']:
+                        return (distro_name, 'zypper')
+
             # Fallback to checking for package managers
-            if shutil.which('apt'):
-                return ('unknown', 'apt')
-            elif shutil.which('dnf'):
-                return ('unknown', 'dnf')
-            elif shutil.which('pacman'):
-                return ('unknown', 'pacman')
-            elif shutil.which('zypper'):
-                return ('unknown', 'zypper')
-            
+            for pm in ['apt', 'dnf', 'pacman', 'zypper']:
+                if shutil.which(pm):
+                    return ('unknown', pm)
+
         except Exception as e:
-            print(f"{Color.YELLOW}Warning: Could not detect distribution: {e}{Color.END}")
-        
+            verbose_log.log(f"Error detecting distro: {e}")
+
         return ('unknown', 'unknown')
 
 
+# -----------------------------------------------------------------------------
+# Steam Detection
+# -----------------------------------------------------------------------------
+
+def detect_steam_variant() -> Tuple[SteamVariant, str]:
+    """
+    Detect which Steam variant is installed.
+
+    Returns:
+        Tuple of (SteamVariant, description_message)
+    """
+    variants_found: List[Tuple[SteamVariant, str]] = []
+
+    # Check native Steam
+    if shutil.which('steam'):
+        verbose_log.log("Found 'steam' in PATH (native)")
+        variants_found.append((SteamVariant.NATIVE, "Native Steam in PATH"))
+
+    # Check Flatpak Steam
+    try:
+        result = subprocess.run(
+            ['flatpak', 'info', 'com.valvesoftware.Steam'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            verbose_log.log("Found Flatpak Steam")
+            variants_found.append((SteamVariant.FLATPAK, "Flatpak (com.valvesoftware.Steam)"))
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        verbose_log.log("Flatpak not available or timed out")
+    except Exception as e:
+        verbose_log.log(f"Error checking Flatpak Steam: {e}")
+
+    # Check Snap Steam (best-effort)
+    try:
+        result = subprocess.run(
+            ['snap', 'list', 'steam'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0 and 'steam' in result.stdout.lower():
+            verbose_log.log("Found Snap Steam")
+            variants_found.append((SteamVariant.SNAP, "Snap package"))
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        verbose_log.log("Snap not available or timed out")
+    except Exception as e:
+        verbose_log.log(f"Error checking Snap Steam: {e}")
+
+    if not variants_found:
+        return (SteamVariant.NONE, "Steam not detected")
+
+    # Return first found (prefer native > flatpak > snap)
+    primary = variants_found[0]
+    if len(variants_found) > 1:
+        others = ", ".join(v[1] for v in variants_found[1:])
+        return (primary[0], f"{primary[1]} (also found: {others})")
+    return primary
+
+
+def find_steam_root() -> Optional[str]:
+    """
+    Find the active Steam root directory.
+
+    Checks common Steam installation paths and resolves symlinks.
+
+    Returns:
+        Path to Steam root, or None if not found.
+    """
+    candidates = [
+        os.path.expanduser('~/.local/share/Steam'),
+        os.path.expanduser('~/.steam/root'),
+        os.path.expanduser('~/.steam/steam'),
+        # Flatpak location
+        os.path.expanduser('~/.var/app/com.valvesoftware.Steam/.local/share/Steam'),
+        os.path.expanduser('~/.var/app/com.valvesoftware.Steam/.steam/steam'),
+    ]
+
+    for candidate in candidates:
+        verbose_log.log(f"Checking Steam root candidate: {candidate}")
+        try:
+            resolved = os.path.realpath(candidate)
+            if not os.path.isdir(resolved):
+                verbose_log.log(f"  Not a directory: {resolved}")
+                continue
+
+            # Check for steamapps directory or libraryfolders.vdf
+            steamapps = os.path.join(resolved, 'steamapps')
+            vdf_path = os.path.join(steamapps, 'libraryfolders.vdf')
+
+            if os.path.isdir(steamapps):
+                verbose_log.log(f"  Found steamapps at: {steamapps}")
+                return resolved
+            if os.path.isfile(vdf_path):
+                verbose_log.log(f"  Found libraryfolders.vdf at: {vdf_path}")
+                return resolved
+
+        except (PermissionError, OSError) as e:
+            verbose_log.log(f"  Error accessing {candidate}: {e}")
+
+    return None
+
+
+def get_library_paths(steam_root: Optional[str]) -> List[str]:
+    """
+    Get all Steam library paths.
+
+    Parses libraryfolders.vdf and includes the root library.
+
+    Args:
+        steam_root: Path to Steam root directory.
+
+    Returns:
+        List of library paths.
+    """
+    libraries: List[str] = []
+
+    if not steam_root:
+        return libraries
+
+    # The root itself is always a library
+    libraries.append(steam_root)
+
+    # Parse libraryfolders.vdf
+    vdf_path = os.path.join(steam_root, 'steamapps', 'libraryfolders.vdf')
+    if os.path.isfile(vdf_path):
+        parsed = parse_libraryfolders_vdf(vdf_path)
+        for lib in parsed:
+            if lib not in libraries:
+                libraries.append(lib)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for lib in libraries:
+        resolved = os.path.realpath(lib)
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+
+    return unique
+
+
+def find_proton_installations(steam_root: Optional[str]) -> List[ProtonInstall]:
+    """
+    Find all Proton installations across Steam libraries.
+
+    Searches:
+    - <library>/steamapps/common/Proton*
+    - <root>/compatibilitytools.d/*Proton* (GE-Proton, etc.)
+    - <library>/steamapps/compatibilitytools.d/*Proton*
+
+    Args:
+        steam_root: Path to Steam root directory.
+
+    Returns:
+        List of ProtonInstall objects.
+    """
+    protons: List[ProtonInstall] = []
+
+    if not steam_root:
+        return protons
+
+    libraries = get_library_paths(steam_root)
+    verbose_log.log(f"Searching for Proton in {len(libraries)} library path(s)")
+
+    search_patterns: List[Tuple[str, str]] = []
+
+    for lib in libraries:
+        # Official Proton in steamapps/common
+        search_patterns.append((os.path.join(lib, 'steamapps', 'common'), 'Proton*'))
+        search_patterns.append((os.path.join(lib, 'steamapps', 'common'), 'proton*'))
+
+        # Custom Proton in compatibilitytools.d
+        search_patterns.append((os.path.join(lib, 'compatibilitytools.d'), '*Proton*'))
+        search_patterns.append((os.path.join(lib, 'compatibilitytools.d'), '*proton*'))
+        search_patterns.append((os.path.join(lib, 'steamapps', 'compatibilitytools.d'), '*Proton*'))
+        search_patterns.append((os.path.join(lib, 'steamapps', 'compatibilitytools.d'), '*proton*'))
+
+    # Also check root's compatibilitytools.d
+    root_compat = os.path.join(steam_root, 'compatibilitytools.d')
+    if root_compat not in [p[0] for p in search_patterns]:
+        search_patterns.append((root_compat, '*Proton*'))
+        search_patterns.append((root_compat, '*proton*'))
+
+    # Also check ~/.steam/root/compatibilitytools.d (common for GE-Proton)
+    home_compat = os.path.expanduser('~/.steam/root/compatibilitytools.d')
+    if os.path.isdir(home_compat):
+        search_patterns.append((home_compat, '*Proton*'))
+        search_patterns.append((home_compat, '*proton*'))
+        search_patterns.append((home_compat, 'GE-Proton*'))
+
+    seen_paths = set()
+
+    for base_dir, pattern in search_patterns:
+        if not os.path.isdir(base_dir):
+            continue
+
+        verbose_log.log(f"  Searching: {base_dir}/{pattern}")
+
+        try:
+            for entry in os.listdir(base_dir):
+                entry_lower = entry.lower()
+                pattern_lower = pattern.lower().replace('*', '')
+
+                # Simple glob matching
+                if pattern_lower in entry_lower or 'proton' in entry_lower:
+                    full_path = os.path.join(base_dir, entry)
+                    resolved = os.path.realpath(full_path)
+
+                    if resolved in seen_paths:
+                        continue
+                    if not os.path.isdir(resolved):
+                        continue
+
+                    seen_paths.add(resolved)
+
+                    # Check for Proton markers
+                    has_exec = os.path.isfile(os.path.join(resolved, 'proton'))
+                    has_manifest = os.path.isfile(os.path.join(resolved, 'toolmanifest.vdf'))
+                    has_version = os.path.isfile(os.path.join(resolved, 'version'))
+
+                    if has_exec or has_manifest or has_version:
+                        protons.append(ProtonInstall(
+                            name=entry,
+                            path=resolved,
+                            has_executable=has_exec,
+                            has_toolmanifest=has_manifest,
+                            has_version=has_version
+                        ))
+                        verbose_log.log(f"    Found Proton: {entry}")
+
+        except (PermissionError, OSError) as e:
+            verbose_log.log(f"    Error listing {base_dir}: {e}")
+
+    return protons
+
+
+# -----------------------------------------------------------------------------
+# Dependency Checker
+# -----------------------------------------------------------------------------
+
 class DependencyChecker:
-    """Check for Steam and Proton dependencies"""
-    
+    """Check for Steam and Proton dependencies."""
+
     def __init__(self, distro: str, package_manager: str):
         self.distro = distro
         self.package_manager = package_manager
         self.checks: List[DependencyCheck] = []
-    
-    def run_command(self, cmd: List[str], check: bool = False) -> Tuple[int, str]:
-        """Run a shell command and return (exit_code, output)"""
+
+    def run_command(
+        self,
+        cmd: List[str],
+        timeout: int = 30
+    ) -> Tuple[int, str, str]:
+        """
+        Run a shell command and return (exit_code, stdout, stderr).
+
+        Args:
+            cmd: Command and arguments as list.
+            timeout: Timeout in seconds.
+
+        Returns:
+            Tuple of (exit_code, stdout, stderr)
+        """
+        verbose_log.log(f"Running command: {' '.join(cmd)}")
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                check=check
+                timeout=timeout
             )
-            return (result.returncode, result.stdout + result.stderr)
-        except subprocess.CalledProcessError as e:
-            return (e.returncode, e.stdout + e.stderr)
+            return (result.returncode, result.stdout, result.stderr)
+        except subprocess.TimeoutExpired:
+            return (1, '', 'Command timed out')
+        except FileNotFoundError:
+            return (127, '', f'Command not found: {cmd[0]}')
         except Exception as e:
-            return (1, str(e))
-    
+            return (1, '', str(e))
+
     def check_command_exists(self, command: str) -> bool:
-        """Check if a command exists in PATH"""
+        """Check if a command exists in PATH."""
         return shutil.which(command) is not None
-    
+
     def check_package_installed(self, package: str) -> bool:
-        """Check if a package is installed"""
+        """
+        Check if a package is installed using the system package manager.
+
+        Args:
+            package: Package name to check.
+
+        Returns:
+            True if installed, False otherwise.
+        """
         if self.package_manager == 'apt':
-            code, _ = self.run_command(['dpkg', '-l', package])
-            return code == 0
+            # Use dpkg-query for accurate status check
+            code, stdout, _ = self.run_command([
+                'dpkg-query', '-W', '-f=${Status}', package
+            ])
+            return code == 0 and 'install ok installed' in stdout
+
         elif self.package_manager == 'dnf':
-            code, _ = self.run_command(['rpm', '-q', package])
+            code, _, _ = self.run_command(['rpm', '-q', package])
             return code == 0
+
         elif self.package_manager == 'pacman':
-            code, _ = self.run_command(['pacman', '-Q', package])
+            code, _, _ = self.run_command(['pacman', '-Q', package])
             return code == 0
+
+        elif self.package_manager == 'zypper':
+            code, _, _ = self.run_command(['rpm', '-q', package])
+            return code == 0
+
         return False
-    
-    def check_steam_installed(self) -> DependencyCheck:
-        """Check if Steam is installed"""
-        if self.check_command_exists('steam'):
-            return DependencyCheck(
-                name="Steam Client",
+
+    def check_multilib_enabled(self) -> Tuple[bool, str]:
+        """
+        Check if 32-bit/multilib support is enabled.
+
+        Returns:
+            Tuple of (is_enabled, message)
+        """
+        if self.package_manager == 'apt':
+            code, stdout, _ = self.run_command(['dpkg', '--print-foreign-architectures'])
+            if 'i386' in stdout:
+                return (True, "i386 architecture enabled")
+            return (False, "i386 architecture not enabled (run: sudo dpkg --add-architecture i386)")
+
+        elif self.package_manager == 'pacman':
+            # Check /etc/pacman.conf for [multilib] not commented
+            try:
+                with open('/etc/pacman.conf', 'r') as f:
+                    content = f.read()
+                # Look for [multilib] that's not commented
+                lines = content.split('\n')
+                for i, line in enumerate(lines):
+                    stripped = line.strip()
+                    if stripped == '[multilib]':
+                        # Check if the Include line follows
+                        if i + 1 < len(lines):
+                            next_line = lines[i + 1].strip()
+                            if next_line.startswith('Include') and not next_line.startswith('#'):
+                                return (True, "[multilib] repository enabled")
+                        return (True, "[multilib] section found")
+                return (False, "[multilib] not enabled in /etc/pacman.conf")
+            except Exception as e:
+                verbose_log.log(f"Error reading pacman.conf: {e}")
+                return (False, "Could not read /etc/pacman.conf")
+
+        elif self.package_manager == 'dnf':
+            # DNF handles multilib automatically, just check for .i686 packages
+            return (True, "DNF supports multilib automatically")
+
+        return (True, "Assuming multilib support available")
+
+    def _get_install_command(self, package: str) -> str:
+        """Get the install command for a package based on package manager."""
+        commands = {
+            'apt': f"sudo apt update && sudo apt install -y {package}",
+            'dnf': f"sudo dnf install -y {package}",
+            'pacman': f"sudo pacman -S --noconfirm {package}",
+            'zypper': f"sudo zypper install -y {package}",
+        }
+        return commands.get(self.package_manager, f"Please install {package} manually")
+
+    # -------------------------------------------------------------------------
+    # Individual Checks
+    # -------------------------------------------------------------------------
+
+    def check_system(self) -> List[DependencyCheck]:
+        """Check system information."""
+        checks = []
+
+        # Linux distribution
+        checks.append(DependencyCheck(
+            name="Linux Distribution",
+            status=CheckStatus.PASS,
+            message=f"{self.distro}",
+            category="System",
+            details=f"Package manager: {self.package_manager}"
+        ))
+
+        # Architecture
+        arch = platform.machine()
+        if arch == 'x86_64':
+            checks.append(DependencyCheck(
+                name="64-bit System",
                 status=CheckStatus.PASS,
-                message="Steam is installed"
-            )
+                message="x86_64 architecture",
+                category="System"
+            ))
         else:
+            checks.append(DependencyCheck(
+                name="System Architecture",
+                status=CheckStatus.WARNING,
+                message=f"{arch} (Steam primarily supports x86_64)",
+                category="System"
+            ))
+
+        return checks
+
+    def check_steam(self) -> List[DependencyCheck]:
+        """Check Steam installation."""
+        checks = []
+
+        variant, message = detect_steam_variant()
+
+        if variant == SteamVariant.NONE:
             fix_cmd = self._get_install_command('steam')
-            return DependencyCheck(
+            checks.append(DependencyCheck(
                 name="Steam Client",
                 status=CheckStatus.FAIL,
                 message="Steam is not installed",
+                category="Steam",
                 fix_command=fix_cmd
-            )
-    
-    def check_graphics_drivers(self) -> List[DependencyCheck]:
-        """Check for graphics drivers"""
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="Steam Client",
+                status=CheckStatus.PASS,
+                message=f"Installed: {message}",
+                category="Steam"
+            ))
+
+        # Check Steam root directory
+        steam_root = find_steam_root()
+        if steam_root:
+            checks.append(DependencyCheck(
+                name="Steam Root",
+                status=CheckStatus.PASS,
+                message=steam_root,
+                category="Steam"
+            ))
+
+            # Check library folders
+            libraries = get_library_paths(steam_root)
+            if len(libraries) > 1:
+                checks.append(DependencyCheck(
+                    name="Steam Libraries",
+                    status=CheckStatus.PASS,
+                    message=f"{len(libraries)} library folder(s) found",
+                    category="Steam",
+                    details="\n".join(libraries)
+                ))
+        else:
+            if variant != SteamVariant.NONE:
+                checks.append(DependencyCheck(
+                    name="Steam Root",
+                    status=CheckStatus.WARNING,
+                    message="Steam root directory not found (Steam may not have been run yet)",
+                    category="Steam"
+                ))
+
+        return checks
+
+    def check_proton(self) -> List[DependencyCheck]:
+        """Check Proton installations."""
         checks = []
-        
-        # Check for Vulkan support
+
+        steam_root = find_steam_root()
+        protons = find_proton_installations(steam_root)
+
+        if protons:
+            # List found Proton versions
+            names = [p.name for p in protons]
+            checks.append(DependencyCheck(
+                name="Proton",
+                status=CheckStatus.PASS,
+                message=f"Found {len(protons)} installation(s)",
+                category="Proton",
+                details="\n".join(f"  - {p.name}: {p.path}" for p in protons)
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="Proton",
+                status=CheckStatus.WARNING,
+                message="No Proton installations found",
+                category="Proton",
+                fix_command="Install Proton from Steam: Settings → Compatibility → Enable Steam Play"
+            ))
+
+        return checks
+
+    def check_graphics(self) -> List[DependencyCheck]:
+        """Check graphics/Vulkan support."""
+        checks = []
+
+        # Check Vulkan
         if self.check_command_exists('vulkaninfo'):
-            code, output = self.run_command(['vulkaninfo', '--summary'])
+            # Run vulkaninfo (without --summary as per spec)
+            code, stdout, stderr = self.run_command(['vulkaninfo'])
             if code == 0:
                 checks.append(DependencyCheck(
                     name="Vulkan Support",
                     status=CheckStatus.PASS,
-                    message="Vulkan is available"
+                    message="Vulkan is available",
+                    category="Graphics"
                 ))
             else:
                 checks.append(DependencyCheck(
                     name="Vulkan Support",
-                    status=CheckStatus.WARNING,
-                    message="Vulkan command exists but returned error"
+                    status=CheckStatus.FAIL,
+                    message="vulkaninfo failed - Vulkan may not be properly configured",
+                    category="Graphics",
+                    fix_command="Check Vulkan ICD installation, GPU drivers, and 32-bit Vulkan libs",
+                    details=f"Error: {stderr[:200] if stderr else 'Unknown error'}"
                 ))
         else:
-            fix_cmd = self._get_install_command('vulkan-tools')
+            vulkan_pkg = {
+                'apt': 'vulkan-tools',
+                'dnf': 'vulkan-tools',
+                'pacman': 'vulkan-tools',
+            }.get(self.package_manager, 'vulkan-tools')
+
             checks.append(DependencyCheck(
                 name="Vulkan Tools",
                 status=CheckStatus.FAIL,
-                message="Vulkan tools not installed",
-                fix_command=fix_cmd
+                message="vulkaninfo not found",
+                category="Graphics",
+                fix_command=self._get_install_command(vulkan_pkg)
             ))
-        
-        # Check for Mesa (common on Linux)
-        if self.check_package_installed('mesa-utils') or self.check_command_exists('glxinfo'):
-            checks.append(DependencyCheck(
-                name="Mesa/OpenGL",
-                status=CheckStatus.PASS,
-                message="Mesa utilities available"
-            ))
+
+        # Check Mesa/OpenGL
+        if self.check_command_exists('glxinfo'):
+            code, stdout, stderr = self.run_command(['glxinfo', '-B'])
+            if code == 0:
+                checks.append(DependencyCheck(
+                    name="Mesa/OpenGL",
+                    status=CheckStatus.PASS,
+                    message="OpenGL support available",
+                    category="Graphics"
+                ))
+            else:
+                checks.append(DependencyCheck(
+                    name="Mesa/OpenGL",
+                    status=CheckStatus.WARNING,
+                    message="glxinfo returned error (may need display)",
+                    category="Graphics",
+                    details=f"This may be normal in headless/SSH sessions"
+                ))
         else:
             checks.append(DependencyCheck(
                 name="Mesa/OpenGL",
                 status=CheckStatus.WARNING,
-                message="Mesa utilities not found (may not be needed)"
+                message="glxinfo not installed (optional)",
+                category="Graphics",
+                fix_command=self._get_install_command('mesa-utils')
             ))
-        
+
         return checks
-    
-    def check_required_libraries(self) -> List[DependencyCheck]:
-        """Check for required libraries"""
+
+    def check_32bit_support(self) -> List[DependencyCheck]:
+        """Check 32-bit/multilib support and packages."""
         checks = []
-        
-        required_libs = {
-            'apt': ['lib32gcc-s1', 'lib32stdc++6', 'libc6-i386'],
-            'dnf': ['glibc.i686', 'libgcc.i686', 'libstdc++.i686'],
-            'pacman': ['lib32-gcc-libs', 'lib32-glibc'],
+
+        # Check if multilib is enabled
+        enabled, message = self.check_multilib_enabled()
+        if enabled:
+            checks.append(DependencyCheck(
+                name="Multilib/32-bit",
+                status=CheckStatus.PASS,
+                message=message,
+                category="32-bit"
+            ))
+        else:
+            checks.append(DependencyCheck(
+                name="Multilib/32-bit",
+                status=CheckStatus.FAIL,
+                message=message,
+                category="32-bit"
+            ))
+
+        # Check required 32-bit packages per distro
+        packages_to_check: Dict[str, List[str]] = {
+            'apt': [
+                'libc6-i386',
+                'libstdc++6:i386',
+                'libvulkan1:i386',
+                'mesa-vulkan-drivers:i386',
+            ],
+            'pacman': [
+                'lib32-glibc',
+                'lib32-gcc-libs',
+                'lib32-vulkan-icd-loader',
+                'lib32-mesa',
+            ],
+            'dnf': [
+                'glibc.i686',
+                'libgcc.i686',
+                'libstdc++.i686',
+                'vulkan-loader.i686',
+            ],
         }
-        
-        if self.package_manager in required_libs:
-            # Check for 32-bit library support (needed for many Steam games)
-            arch = platform.machine()
-            if arch == 'x86_64':
-                checks.append(DependencyCheck(
-                    name="64-bit System",
-                    status=CheckStatus.PASS,
-                    message="System supports 64-bit"
-                ))
-                
-                # Check if multilib is enabled (for 32-bit compatibility)
-                if self.package_manager == 'apt':
-                    code, output = self.run_command(['dpkg', '--print-foreign-architectures'])
-                    if 'i386' in output:
+
+        if self.package_manager in packages_to_check:
+            for pkg in packages_to_check[self.package_manager]:
+                if self.check_package_installed(pkg):
+                    checks.append(DependencyCheck(
+                        name=pkg,
+                        status=CheckStatus.PASS,
+                        message="Installed",
+                        category="32-bit"
+                    ))
+                else:
+                    # For dnf vulkan-loader, be less strict since package name may vary
+                    if self.package_manager == 'dnf' and 'vulkan' in pkg:
                         checks.append(DependencyCheck(
-                            name="32-bit Support",
-                            status=CheckStatus.PASS,
-                            message="32-bit architecture support enabled"
+                            name=pkg,
+                            status=CheckStatus.WARNING,
+                            message="Not found (package name may vary)",
+                            category="32-bit",
+                            fix_command=self._get_install_command(pkg)
                         ))
                     else:
                         checks.append(DependencyCheck(
-                            name="32-bit Support",
-                            status=CheckStatus.WARNING,
-                            message="32-bit architecture not enabled",
-                            fix_command="sudo dpkg --add-architecture i386 && sudo apt update"
+                            name=pkg,
+                            status=CheckStatus.FAIL,
+                            message="Not installed",
+                            category="32-bit",
+                            fix_command=self._get_install_command(pkg)
                         ))
-                else:
-                    checks.append(DependencyCheck(
-                        name="32-bit Support",
-                        status=CheckStatus.PASS,
-                        message="Assuming 32-bit support available"
-                    ))
-        
+
         return checks
-    
-    def check_proton(self) -> DependencyCheck:
-        """Check for Proton installation"""
-        # Proton is typically installed through Steam
-        steam_path = os.path.expanduser('~/.steam/steam')
-        proton_paths = [
-            os.path.join(steam_path, 'steamapps/common'),
-            os.path.join(steam_path, 'compatibilitytools.d')
-        ]
-        
-        proton_found = False
-        for path in proton_paths:
-            if os.path.exists(path):
-                try:
-                    entries = os.listdir(path)
-                    for entry in entries:
-                        # Check if entry contains 'proton' and is a directory
-                        if 'proton' in entry.lower():
-                            entry_path = os.path.join(path, entry)
-                            if os.path.isdir(entry_path):
-                                # Verify it's an actual Proton installation by checking for key files
-                                proton_executable = os.path.join(entry_path, 'proton')
-                                version_file = os.path.join(entry_path, 'version')
-                                toolmanifest = os.path.join(entry_path, 'toolmanifest.vdf')
-                                
-                                # Check if any of the Proton-specific files exist
-                                if (os.path.exists(proton_executable) or 
-                                    os.path.exists(version_file) or 
-                                    os.path.exists(toolmanifest)):
-                                    proton_found = True
-                                    break
-                except (PermissionError, OSError) as e:
-                    # Log specific errors but continue checking other paths
-                    # In production, this could be logged to a file
-                    continue
-                except Exception as e:
-                    # Catch any other unexpected errors
-                    continue
-        
-        if proton_found:
-            return DependencyCheck(
-                name="Proton",
-                status=CheckStatus.PASS,
-                message="Proton installation found"
-            )
-        else:
-            return DependencyCheck(
-                name="Proton",
-                status=CheckStatus.WARNING,
-                message="Proton not found (install from Steam client)",
-                fix_command="Install Proton from Steam > Settings > Compatibility > Enable Steam Play"
-            )
-    
-    def check_wine_dependencies(self) -> List[DependencyCheck]:
-        """Check for Wine dependencies (used by Proton)"""
-        checks = []
-        
-        # Check for common Wine dependencies
-        if self.package_manager in ['apt', 'dnf', 'pacman']:
-            checks.append(DependencyCheck(
-                name="Wine Dependencies",
-                status=CheckStatus.PASS,
-                message="Package manager available for Wine dependencies"
-            ))
-        
-        return checks
-    
-    def _get_install_command(self, package: str) -> str:
-        """Get the install command for a package based on package manager"""
-        if self.package_manager == 'apt':
-            return f"sudo apt update && sudo apt install -y {package}"
-        elif self.package_manager == 'dnf':
-            return f"sudo dnf install -y {package}"
-        elif self.package_manager == 'pacman':
-            return f"sudo pacman -S --noconfirm {package}"
-        elif self.package_manager == 'zypper':
-            return f"sudo zypper install -y {package}"
-        else:
-            return f"Please install {package} manually"
-    
+
     def run_all_checks(self) -> List[DependencyCheck]:
-        """Run all dependency checks"""
-        all_checks = []
-        
-        # System info
-        all_checks.append(DependencyCheck(
-            name="Linux Distribution",
-            status=CheckStatus.PASS,
-            message=f"{self.distro} ({self.package_manager})"
-        ))
-        
-        # Steam check
-        all_checks.append(self.check_steam_installed())
-        
-        # Proton check
-        all_checks.append(self.check_proton())
-        
-        # Graphics drivers
-        all_checks.extend(self.check_graphics_drivers())
-        
-        # Required libraries
-        all_checks.extend(self.check_required_libraries())
-        
-        # Wine dependencies
-        all_checks.extend(self.check_wine_dependencies())
-        
+        """Run all dependency checks."""
+        all_checks: List[DependencyCheck] = []
+
+        all_checks.extend(self.check_system())
+        all_checks.extend(self.check_steam())
+        all_checks.extend(self.check_proton())
+        all_checks.extend(self.check_graphics())
+        all_checks.extend(self.check_32bit_support())
+
         return all_checks
 
 
-class SteamProtonHelper:
-    """Main application class"""
-    
-    def __init__(self):
-        self.distro, self.package_manager = DistroDetector.detect_distro()
-        self.checker = DependencyChecker(self.distro, self.package_manager)
-    
-    def print_header(self):
-        """Print application header"""
-        print(f"\n{Color.BOLD}{Color.CYAN}╔══════════════════════════════════════════╗{Color.END}")
-        print(f"{Color.BOLD}{Color.CYAN}║   Steam + Proton Helper for Linux       ║{Color.END}")
-        print(f"{Color.BOLD}{Color.CYAN}╔══════════════════════════════════════════╗{Color.END}\n")
-    
-    def print_summary(self, checks: List[DependencyCheck]):
-        """Print summary of checks"""
-        print(f"\n{Color.BOLD}{'='*50}{Color.END}")
-        print(f"{Color.BOLD}Dependency Check Summary{Color.END}")
-        print(f"{Color.BOLD}{'='*50}{Color.END}\n")
-        
-        passed = sum(1 for c in checks if c.status == CheckStatus.PASS)
-        failed = sum(1 for c in checks if c.status == CheckStatus.FAIL)
-        warnings = sum(1 for c in checks if c.status == CheckStatus.WARNING)
-        
-        for check in checks:
-            status_color = {
-                CheckStatus.PASS: Color.GREEN,
-                CheckStatus.FAIL: Color.RED,
-                CheckStatus.WARNING: Color.YELLOW,
-                CheckStatus.SKIPPED: Color.BLUE
-            }.get(check.status, '')
-            
-            print(f"{status_color}{check.status.value}{Color.END} {Color.BOLD}{check.name}{Color.END}: {check.message}")
-            
+# -----------------------------------------------------------------------------
+# Output Formatting
+# -----------------------------------------------------------------------------
+
+def get_status_symbol(status: CheckStatus) -> str:
+    """Get the display symbol for a check status."""
+    symbols = {
+        CheckStatus.PASS: "✓",
+        CheckStatus.FAIL: "✗",
+        CheckStatus.WARNING: "⚠",
+        CheckStatus.SKIPPED: "○",
+    }
+    return symbols.get(status, "?")
+
+
+def get_status_color(status: CheckStatus) -> str:
+    """Get the color for a check status."""
+    colors = {
+        CheckStatus.PASS: Color.GREEN,
+        CheckStatus.FAIL: Color.RED,
+        CheckStatus.WARNING: Color.YELLOW,
+        CheckStatus.SKIPPED: Color.BLUE,
+    }
+    return colors.get(status, '')
+
+
+def print_header() -> None:
+    """Print the application header with correct box drawing."""
+    print()
+    print(f"{Color.BOLD}{Color.CYAN}╔══════════════════════════════════════════╗{Color.END}")
+    print(f"{Color.BOLD}{Color.CYAN}║   Steam + Proton Helper for Linux        ║{Color.END}")
+    print(f"{Color.BOLD}{Color.CYAN}╚══════════════════════════════════════════╝{Color.END}")
+    print()
+
+
+def print_checks_by_category(checks: List[DependencyCheck], verbose: bool = False) -> None:
+    """Print checks grouped by category."""
+    # Group by category
+    categories: Dict[str, List[DependencyCheck]] = {}
+    for check in checks:
+        cat = check.category
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append(check)
+
+    # Define category order
+    category_order = ["System", "Steam", "Proton", "Graphics", "32-bit"]
+
+    for category in category_order:
+        if category not in categories:
+            continue
+
+        print(f"\n{Color.BOLD}── {category} ──{Color.END}")
+
+        for check in categories[category]:
+            color = get_status_color(check.status)
+            symbol = get_status_symbol(check.status)
+
+            print(f"  {color}{symbol}{Color.END} {Color.BOLD}{check.name}{Color.END}: {check.message}")
+
             if check.fix_command:
-                print(f"  {Color.CYAN}Fix:{Color.END} {check.fix_command}")
-        
-        print(f"\n{Color.BOLD}Results:{Color.END}")
-        print(f"  {Color.GREEN}Passed:{Color.END} {passed}")
-        print(f"  {Color.RED}Failed:{Color.END} {failed}")
-        print(f"  {Color.YELLOW}Warnings:{Color.END} {warnings}")
-        
-        if failed == 0 and warnings == 0:
-            print(f"\n{Color.GREEN}{Color.BOLD}✓ Your system is ready for Steam gaming!{Color.END}")
-        elif failed == 0:
-            print(f"\n{Color.YELLOW}{Color.BOLD}⚠ Your system is mostly ready, but check the warnings above.{Color.END}")
-        else:
-            print(f"\n{Color.RED}{Color.BOLD}✗ Please install the missing dependencies above.{Color.END}")
-    
-    def run(self):
-        """Run the main application"""
-        self.print_header()
-        
-        print(f"{Color.BOLD}Checking Steam and Proton dependencies...{Color.END}\n")
-        
-        checks = self.checker.run_all_checks()
-        
-        self.print_summary(checks)
-        
-        print(f"\n{Color.BOLD}Additional Tips:{Color.END}")
-        print(f"  • To enable Proton in Steam: Settings → Compatibility → Enable Steam Play")
-        print(f"  • For best performance, keep your graphics drivers updated")
-        print(f"  • Visit ProtonDB (protondb.com) to check game compatibility")
-        print()
+                print(f"      {Color.CYAN}Fix:{Color.END} {check.fix_command}")
+
+            if verbose and check.details:
+                for line in check.details.split('\n'):
+                    print(f"      {Color.DIM}{line}{Color.END}")
+
+    # Print any remaining categories
+    for category, cat_checks in categories.items():
+        if category in category_order:
+            continue
+
+        print(f"\n{Color.BOLD}── {category} ──{Color.END}")
+        for check in cat_checks:
+            color = get_status_color(check.status)
+            symbol = get_status_symbol(check.status)
+            print(f"  {color}{symbol}{Color.END} {Color.BOLD}{check.name}{Color.END}: {check.message}")
 
 
-def main():
-    """Main entry point"""
+def print_summary(checks: List[DependencyCheck]) -> None:
+    """Print summary of check results."""
+    passed = sum(1 for c in checks if c.status == CheckStatus.PASS)
+    failed = sum(1 for c in checks if c.status == CheckStatus.FAIL)
+    warnings = sum(1 for c in checks if c.status == CheckStatus.WARNING)
+    skipped = sum(1 for c in checks if c.status == CheckStatus.SKIPPED)
+
+    print(f"\n{Color.BOLD}{'─' * 44}{Color.END}")
+    print(f"{Color.BOLD}Summary{Color.END}")
+    print(f"  {Color.GREEN}Passed:{Color.END}   {passed}")
+    print(f"  {Color.RED}Failed:{Color.END}   {failed}")
+    print(f"  {Color.YELLOW}Warnings:{Color.END} {warnings}")
+    if skipped > 0:
+        print(f"  {Color.BLUE}Skipped:{Color.END}  {skipped}")
+
+    print()
+    if failed == 0 and warnings == 0:
+        print(f"{Color.GREEN}{Color.BOLD}✓ Your system is ready for Steam gaming!{Color.END}")
+    elif failed == 0:
+        print(f"{Color.YELLOW}{Color.BOLD}⚠ Your system is mostly ready. Review warnings above.{Color.END}")
+    else:
+        print(f"{Color.RED}{Color.BOLD}✗ Some checks failed. Install missing dependencies.{Color.END}")
+
+
+def print_tips() -> None:
+    """Print helpful tips."""
+    print(f"\n{Color.BOLD}Tips:{Color.END}")
+    print(f"  • Enable Proton in Steam: Settings → Compatibility → Enable Steam Play")
+    print(f"  • Keep graphics drivers updated for best performance")
+    print(f"  • Check game compatibility at protondb.com")
+    print()
+
+
+def output_json(checks: List[DependencyCheck], distro: str, package_manager: str) -> None:
+    """Output results as JSON."""
+    steam_variant, steam_msg = detect_steam_variant()
+    steam_root = find_steam_root()
+    protons = find_proton_installations(steam_root)
+
+    result = {
+        "system": {
+            "distro": distro,
+            "package_manager": package_manager,
+            "arch": platform.machine(),
+        },
+        "steam": {
+            "variant": steam_variant.value,
+            "message": steam_msg,
+            "root": steam_root,
+            "libraries": get_library_paths(steam_root) if steam_root else [],
+        },
+        "proton": {
+            "found": len(protons) > 0,
+            "installations": [
+                {
+                    "name": p.name,
+                    "path": p.path,
+                    "has_executable": p.has_executable,
+                    "has_toolmanifest": p.has_toolmanifest,
+                    "has_version": p.has_version,
+                }
+                for p in protons
+            ],
+        },
+        "checks": [c.to_dict() for c in checks],
+        "summary": {
+            "passed": sum(1 for c in checks if c.status == CheckStatus.PASS),
+            "failed": sum(1 for c in checks if c.status == CheckStatus.FAIL),
+            "warnings": sum(1 for c in checks if c.status == CheckStatus.WARNING),
+            "skipped": sum(1 for c in checks if c.status == CheckStatus.SKIPPED),
+        },
+    }
+
+    print(json.dumps(result, indent=2))
+
+
+# -----------------------------------------------------------------------------
+# Main Application
+# -----------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Steam Proton Helper - Check system readiness for Steam gaming on Linux.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                  Run all checks with colored output
+  %(prog)s --json           Output results as JSON
+  %(prog)s --no-color       Disable colored output
+  %(prog)s --verbose        Show debug information
+
+Note: This tool is read-only by default and does not install packages.
+"""
+    )
+
+    parser.add_argument(
+        '--json',
+        action='store_true',
+        help='Output results as machine-readable JSON'
+    )
+
+    parser.add_argument(
+        '--no-color',
+        action='store_true',
+        help='Disable ANSI color codes in output'
+    )
+
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Show verbose/debug output including paths tried'
+    )
+
+    parser.add_argument(
+        '--apply',
+        action='store_true',
+        help='(Not implemented) Auto-install missing packages'
+    )
+
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='(Not implemented) Show what --apply would do without executing'
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Main entry point."""
+    args = parse_args()
+
+    # Configure based on arguments
+    if args.no_color or not sys.stdout.isatty():
+        Color.disable()
+
+    global verbose_log
+    verbose_log = VerboseLogger(enabled=args.verbose)
+
+    # Handle not-implemented options
+    if args.apply or args.dry_run:
+        if not args.json:
+            print(f"{Color.YELLOW}⚠ --apply and --dry-run are not yet implemented.{Color.END}")
+            print(f"  This tool is currently read-only (checker mode).")
+            print()
+
     try:
-        helper = SteamProtonHelper()
-        helper.run()
+        # Detect distro
+        distro, package_manager = DistroDetector.detect_distro()
+        verbose_log.log(f"Detected distro: {distro}, package manager: {package_manager}")
+
+        # Run checks
+        checker = DependencyChecker(distro, package_manager)
+        checks = checker.run_all_checks()
+
+        # Output results
+        if args.json:
+            output_json(checks, distro, package_manager)
+        else:
+            print_header()
+            print(f"{Color.BOLD}Checking Steam and Proton dependencies...{Color.END}")
+            print_checks_by_category(checks, verbose=args.verbose)
+            print_summary(checks)
+            print_tips()
+
+        # Return exit code based on failures
+        failed = sum(1 for c in checks if c.status == CheckStatus.FAIL)
+        return 1 if failed > 0 else 0
+
     except KeyboardInterrupt:
-        print(f"\n\n{Color.YELLOW}Interrupted by user{Color.END}")
-        sys.exit(0)
+        if not args.json:
+            print(f"\n{Color.YELLOW}Interrupted by user{Color.END}")
+        return 130
     except Exception as e:
-        print(f"\n{Color.RED}Error: {e}{Color.END}", file=sys.stderr)
-        sys.exit(1)
+        if args.json:
+            print(json.dumps({"error": str(e)}))
+        else:
+            print(f"\n{Color.RED}Error: {e}{Color.END}", file=sys.stderr)
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

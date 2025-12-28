@@ -1,6 +1,8 @@
-# Steam Proton Helper 🎮
+# Steam Proton Helper
 
 A comprehensive Linux tool designed to streamline the setup and troubleshooting of Steam and Proton for gaming on Linux. This helper application automatically detects missing dependencies, validates system configurations, and provides actionable fixes to eliminate common barriers that prevent Windows games from running smoothly on Linux.
+
+**Note:** This tool is a **read-only checker** by default. It does not install packages automatically.
 
 ## Purpose
 
@@ -11,127 +13,55 @@ SteamProtonHelper serves as your **first-line diagnostic and setup assistant** f
 - **Smart Remediation**: Providing distribution-specific commands to fix detected issues
 - **System Verification**: Ensuring compatibility layers and runtime environments are properly configured
 
-## Problems Addressed
-
-Linux gaming presents unique challenges that SteamProtonHelper specifically targets:
-
-### 🎯 **Fragmented Setup Requirements**
-Different Linux distributions require different packages and configurations. SteamProtonHelper eliminates guesswork by auto-detecting your system and providing the exact commands needed for your distribution.
-
-### 🎯 **Missing Compatibility Layers**
-Windows games require Proton (a Wine-based compatibility layer), but users often don't know:
-- If Proton is installed
-- Where to find it
-- How to enable it in Steam
-SteamProtonHelper verifies Proton installation and guides users through activation.
-
-### 🎯 **Graphics Driver Complexity**
-Modern games require Vulkan support and proper graphics drivers, which vary by GPU vendor (NVIDIA, AMD, Intel). SteamProtonHelper checks for:
-- Vulkan runtime and tools
-- Mesa/OpenGL libraries
-- Distribution-specific driver packages
-
-### 🎯 **32-bit Library Dependencies**
-Many Windows games are 32-bit applications requiring multilib support on 64-bit Linux systems. SteamProtonHelper:
-- Detects if 32-bit architecture support is enabled
-- Provides commands to enable multilib repositories
-- Verifies essential 32-bit libraries are installed
-
-### 🎯 **Cryptic Error Messages**
-When games fail to launch, Steam provides minimal diagnostics. SteamProtonHelper proactively identifies configuration gaps before you encounter runtime errors.
-
-## Constraints Solved
-
-### ⚙️ **Distribution-Agnostic Operation**
-- **Constraint**: Package names and commands differ across Ubuntu, Fedora, Arch, openSUSE
-- **Solution**: Auto-detects package manager (apt, dnf, pacman, zypper) and provides tailored installation commands
-
-### ⚙️ **Permission and Access Requirements**
-- **Constraint**: System modifications require sudo/root access
-- **Solution**: Clearly displays commands requiring elevation, allowing users to review before executing
-
-### ⚙️ **Hidden Installation Paths**
-- **Constraint**: Proton installs in user-specific Steam directories that are difficult to locate
-- **Solution**: Automatically searches standard Steam installation paths to verify Proton presence
-
-### ⚙️ **Dependency Chain Complexity**
-- **Constraint**: Gaming requires multiple interdependent components (Steam → Proton → Wine → Graphics Drivers → 32-bit libraries)
-- **Solution**: Checks entire dependency chain in logical order and reports status comprehensively
-
-## Impact on Gaming Experience
-
-### 🚀 **Faster Time-to-Game**
-- **Before**: Hours of forum searching, trial-and-error installations, obscure error messages
-- **After**: 2-3 minute automated check provides complete system status and fix commands
-
-### 🚀 **Reduced Frustration**
-- **Before**: "This game worked on Windows, why won't it run on Linux?"
-- **After**: Clear diagnosis of missing components with specific remediation steps
-
-### 🚀 **Confidence Building**
-- **Before**: Uncertainty about whether Linux can handle gaming workloads
-- **After**: Transparent view of system readiness and required optimizations
-
-### 🚀 **Proactive Prevention**
-- **Before**: Install game, encounter error, debug system
-- **After**: Validate system configuration before purchasing/installing games
-
-### 🚀 **Learning Aid**
-- **Before**: Blindly copying commands from forums without understanding
-- **After**: See exactly which components are needed and why they matter for gaming
-
 ## Features
 
-✅ **Automatic Dependency Detection**
-- Detects your Linux distribution and package manager
-- Checks for Steam installation
-- Verifies Proton compatibility layer
-- Validates graphics drivers (Vulkan, Mesa/OpenGL)
-- Ensures 32-bit library support for older games
+- **Steam Detection**: Detects Native, Flatpak, and Snap Steam installations
+- **Proton Detection**: Finds official Proton and GE-Proton across all Steam libraries
+- **Vulkan Verification**: Validates Vulkan support with actionable guidance
+- **32-bit Support**: Checks multilib/i386 packages required for Windows games
+- **Multi-Library Support**: Parses `libraryfolders.vdf` to check all Steam libraries
+- **JSON Output**: Machine-readable output for scripting and automation
+- **No External Dependencies**: Single-file Python script with stdlib only
 
-✅ **Smart Troubleshooting**
-- Provides specific fix commands for missing dependencies
-- Color-coded output for easy identification of issues
-- Helpful tips and recommendations
+## Supported Configurations
 
-✅ **Distribution Support**
-- Ubuntu/Debian (apt)
-- Fedora/RHEL/CentOS (dnf)
-- Arch/Manjaro (pacman)
-- openSUSE (zypper)
-- Auto-detection for other distributions
+### Steam Installation Types
+
+| Type | Detection Method | Status |
+|------|-----------------|--------|
+| Native | `steam` in PATH | Full support |
+| Flatpak | `flatpak info com.valvesoftware.Steam` | Full support |
+| Snap | `snap list steam` | Best-effort |
+
+### Linux Distributions
+
+| Distribution | Package Manager | 32-bit Check |
+|-------------|-----------------|--------------|
+| Ubuntu/Debian/Mint/Pop!_OS | apt | `dpkg --print-foreign-architectures`, per-package status |
+| Fedora/RHEL/CentOS/Rocky | dnf | Automatic multilib, per-package status |
+| Arch/Manjaro/EndeavourOS | pacman | `[multilib]` in pacman.conf, per-package status |
+| openSUSE | zypper | Basic support |
 
 ## Quick Start
 
 ### Prerequisites
-- Linux operating system
+- Linux operating system (x86_64)
 - Python 3.6 or higher
 - Terminal access
 
 ### Installation
 
-#### Option 1: Install via pip (Recommended)
-```bash
-pip install git+https://github.com/AreteDriver/SteamProtonHelper.git
-steam-proton-helper
-```
-
-#### Option 2: Clone and run directly
-1. **Clone the repository:**
+#### Option 1: Clone and run directly (Recommended)
 ```bash
 git clone https://github.com/AreteDriver/SteamProtonHelper.git
 cd SteamProtonHelper
-```
-
-2. **Run the helper:**
-```bash
-python3 steam_proton_helper.py
-```
-
-Or make it executable and run directly:
-```bash
 chmod +x steam_proton_helper.py
-./steam_proton_helper.py
+```
+
+#### Option 2: Install via pip
+```bash
+pip install git+https://github.com/AreteDriver/SteamProtonHelper.git
+steam-proton-helper
 ```
 
 #### Option 3: Use the installation script
@@ -141,64 +71,166 @@ cd SteamProtonHelper
 ./install.sh
 ```
 
+### Basic Usage
+
+```bash
+# Run all checks with colored output
+./steam_proton_helper.py
+
+# Or with Python directly
+python3 steam_proton_helper.py
+```
+
+## CLI Options
+
+```
+usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--apply] [--dry-run]
+
+Steam Proton Helper - Check system readiness for Steam gaming on Linux.
+
+options:
+  -h, --help     show this help message and exit
+  --json         Output results as machine-readable JSON
+  --no-color     Disable ANSI color codes in output
+  --verbose, -v  Show verbose/debug output including paths tried
+  --apply        (Not implemented) Auto-install missing packages
+  --dry-run      (Not implemented) Show what --apply would do without executing
+```
+
+### Examples
+
+```bash
+# Standard check with colored output
+./steam_proton_helper.py
+
+# JSON output for scripting
+./steam_proton_helper.py --json
+
+# Verbose mode to see all paths checked
+./steam_proton_helper.py --verbose
+
+# Disable colors (useful for piping)
+./steam_proton_helper.py --no-color
+
+# Combine options
+./steam_proton_helper.py --json 2>/dev/null | jq '.summary'
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | All checks passed (may have warnings) |
+| 1 | One or more checks failed |
+| 130 | Interrupted by user (Ctrl+C) |
+
 ## What It Checks
 
-### 1. **System Information**
-- Linux distribution detection
-- Package manager identification
+### System
+- Linux distribution and package manager
+- System architecture (x86_64 recommended)
 
-### 2. **Steam Client**
-- Verifies Steam is installed
-- Provides installation commands if missing
+### Steam
+- Steam client installation (native/flatpak/snap)
+- Steam root directory location
+- Steam library folders (from `libraryfolders.vdf`)
 
-### 3. **Proton Compatibility Layer**
-- Checks for Proton installation in Steam directories
-- Guides you to enable Steam Play if needed
+### Proton
+- Official Proton installations in `steamapps/common`
+- GE-Proton and custom Proton in `compatibilitytools.d`
+- Validates presence of `proton` executable, `toolmanifest.vdf`, or `version` file
 
-### 4. **Graphics Drivers**
-- **Vulkan**: Modern graphics API required for many games
-- **Mesa/OpenGL**: Essential graphics libraries
+### Graphics
+- **Vulkan**: Runs `vulkaninfo` and checks exit code
+- **OpenGL**: Runs `glxinfo -B` if available
 
-### 5. **32-bit Support**
-- Verifies multilib/32-bit architecture support
-- Critical for running older Windows games
-
-### 6. **Wine Dependencies**
-- Checks compatibility layer components used by Proton
+### 32-bit / Multilib
+- Architecture support enabled (i386/multilib)
+- Per-package status for critical 32-bit libraries:
+  - **apt**: `libc6-i386`, `libstdc++6:i386`, `libvulkan1:i386`, `mesa-vulkan-drivers:i386`
+  - **pacman**: `lib32-glibc`, `lib32-gcc-libs`, `lib32-vulkan-icd-loader`, `lib32-mesa`
+  - **dnf**: `glibc.i686`, `libgcc.i686`, `libstdc++.i686`, `vulkan-loader.i686`
 
 ## Example Output
 
 ```
 ╔══════════════════════════════════════════╗
-║   Steam + Proton Helper for Linux       ║
-╔══════════════════════════════════════════╗
+║   Steam + Proton Helper for Linux        ║
+╚══════════════════════════════════════════╝
 
 Checking Steam and Proton dependencies...
 
-==================================================
-Dependency Check Summary
-==================================================
+── System ──
+  ✓ Linux Distribution: Ubuntu 24.04.1 LTS
+  ✓ 64-bit System: x86_64 architecture
 
-✓ Linux Distribution: ubuntu (apt)
-✓ Steam Client: Steam is installed
-✓ Proton: Proton installation found
-✓ Vulkan Support: Vulkan is available
-✓ Mesa/OpenGL: Mesa utilities available
-✓ 64-bit System: System supports 64-bit
-✓ 32-bit Support: 32-bit architecture support enabled
-✓ Wine Dependencies: Package manager available for Wine dependencies
+── Steam ──
+  ✓ Steam Client: Installed: Native Steam in PATH
+  ✓ Steam Root: /home/user/.local/share/Steam
 
-Results:
-  Passed: 8
-  Failed: 0
+── Proton ──
+  ✓ Proton: Found 3 installation(s)
+
+── Graphics ──
+  ✓ Vulkan Support: Vulkan is available
+  ✓ Mesa/OpenGL: OpenGL support available
+
+── 32-bit ──
+  ✓ Multilib/32-bit: i386 architecture enabled
+  ✓ libc6-i386: Installed
+  ✓ libstdc++6:i386: Installed
+  ✓ libvulkan1:i386: Installed
+  ✓ mesa-vulkan-drivers:i386: Installed
+
+────────────────────────────────────────────
+Summary
+  Passed:   12
+  Failed:   0
   Warnings: 0
 
 ✓ Your system is ready for Steam gaming!
 
-Additional Tips:
-  • To enable Proton in Steam: Settings → Compatibility → Enable Steam Play
-  • For best performance, keep your graphics drivers updated
-  • Visit ProtonDB (protondb.com) to check game compatibility
+Tips:
+  • Enable Proton in Steam: Settings → Compatibility → Enable Steam Play
+  • Keep graphics drivers updated for best performance
+  • Check game compatibility at protondb.com
+```
+
+## JSON Output Format
+
+```json
+{
+  "system": {
+    "distro": "Ubuntu 24.04.1 LTS",
+    "package_manager": "apt",
+    "arch": "x86_64"
+  },
+  "steam": {
+    "variant": "native",
+    "message": "Native Steam in PATH",
+    "root": "/home/user/.local/share/Steam",
+    "libraries": ["/home/user/.local/share/Steam", "/mnt/games/SteamLibrary"]
+  },
+  "proton": {
+    "found": true,
+    "installations": [
+      {
+        "name": "Proton 9.0",
+        "path": "/home/user/.local/share/Steam/steamapps/common/Proton 9.0",
+        "has_executable": true,
+        "has_toolmanifest": true,
+        "has_version": true
+      }
+    ]
+  },
+  "checks": [...],
+  "summary": {
+    "passed": 12,
+    "failed": 0,
+    "warnings": 0,
+    "skipped": 0
+  }
+}
 ```
 
 ## Common Issues and Fixes
@@ -222,27 +254,41 @@ sudo pacman -S --noconfirm steam
 
 ### Missing Vulkan Support
 
+If `vulkaninfo` fails, check:
+1. GPU drivers are installed correctly
+2. Vulkan ICD files exist (`/usr/share/vulkan/icd.d/`)
+3. 32-bit Vulkan libraries are installed
+
 **Ubuntu/Debian:**
 ```bash
-sudo apt install -y vulkan-tools mesa-vulkan-drivers
+sudo apt install -y vulkan-tools mesa-vulkan-drivers libvulkan1:i386
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install -y vulkan-tools mesa-vulkan-drivers
+sudo dnf install -y vulkan-tools mesa-vulkan-drivers vulkan-loader.i686
 ```
 
 **Arch Linux:**
 ```bash
-sudo pacman -S --noconfirm vulkan-tools vulkan-icd-loader
+sudo pacman -S --noconfirm vulkan-tools vulkan-icd-loader lib32-vulkan-icd-loader
 ```
 
-### 32-bit Support Not Enabled (Ubuntu/Debian)
+### 32-bit Support Not Enabled
 
+**Ubuntu/Debian:**
 ```bash
 sudo dpkg --add-architecture i386
 sudo apt update
-sudo apt install -y lib32gcc-s1 lib32stdc++6
+sudo apt install -y libc6-i386 libstdc++6:i386 libvulkan1:i386
+```
+
+**Arch Linux:**
+Enable `[multilib]` in `/etc/pacman.conf`:
+```bash
+sudo sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
+sudo pacman -Sy
+sudo pacman -S --noconfirm lib32-glibc lib32-gcc-libs
 ```
 
 ### Proton Not Found
@@ -254,138 +300,42 @@ sudo apt install -y lib32gcc-s1 lib32stdc++6
 5. Select your preferred Proton version
 6. Restart Steam
 
-## Enabling Proton in Steam
-
-Proton allows you to run Windows games on Linux. To enable it:
-
-1. **Launch Steam**
-2. Click **Steam** → **Settings**
-3. Navigate to **Compatibility** tab
-4. Check **"Enable Steam Play for supported titles"**
-5. Optionally check **"Enable Steam Play for all other titles"** for experimental support
-6. Select your Proton version from the dropdown
-7. Click **OK** and restart Steam
-
-## Game Compatibility
-
-Check game compatibility at [ProtonDB](https://www.protondb.com/) - a community database rating how well games run with Proton.
-
-Ratings:
-- **Platinum**: Runs perfectly out of the box
-- **Gold**: Runs perfectly after tweaks
-- **Silver**: Runs with minor issues
-- **Bronze**: Runs but has significant issues
-- **Borked**: Doesn't run
-
-## Graphics Driver Recommendations
-
-### NVIDIA
-```bash
-# Ubuntu/Debian
-sudo apt install -y nvidia-driver-XXX  # Replace XXX with version
-
-# Fedora
-sudo dnf install -y akmod-nvidia
-
-# Arch
-sudo pacman -S --noconfirm nvidia nvidia-utils
-```
-
-### AMD
-```bash
-# Ubuntu/Debian (usually pre-installed)
-sudo apt install -y mesa-vulkan-drivers libvulkan1
-
-# Fedora
-sudo dnf install -y mesa-vulkan-drivers vulkan-loader
-
-# Arch
-sudo pacman -S --noconfirm mesa vulkan-radeon
-```
-
-### Intel
-```bash
-# Ubuntu/Debian
-sudo apt install -y mesa-vulkan-drivers intel-media-va-driver
-
-# Fedora
-sudo dnf install -y mesa-vulkan-drivers intel-media-driver
-
-# Arch
-sudo pacman -S --noconfirm mesa vulkan-intel
-```
-
-## Advanced Usage
-
-### Environment Variables
-
-Some games require specific environment variables. Common ones:
-
-```bash
-# Force Proton version
-PROTON_VERSION=proton-7.0
-
-# Enable logging
-PROTON_LOG=1
-
-# Use custom Proton
-STEAM_COMPAT_DATA_PATH=~/.proton
-```
-
-### Performance Tweaks
-
-1. **GameMode**: Install gamemode for automatic performance optimization
-```bash
-# Ubuntu/Debian
-sudo apt install -y gamemode
-
-# Fedora
-sudo dnf install -y gamemode
-
-# Arch
-sudo pacman -S --noconfirm gamemode
-```
-
-2. **MangoHud**: FPS and performance overlay
-```bash
-# Ubuntu/Debian
-sudo apt install -y mangohud
-
-# Fedora
-sudo dnf install -y mangohud
-
-# Arch
-sudo pacman -S --noconfirm mangohud
-```
-
 ## Troubleshooting
 
-### Application won't run
-1. Ensure Python 3 is installed: `python3 --version`
-2. Check file permissions: `chmod +x steam_proton_helper.py`
-3. Run with Python directly: `python3 steam_proton_helper.py`
+### Script won't run
+```bash
+# Check Python version
+python3 --version  # Requires 3.6+
 
-### False negatives
-- The tool makes best-effort checks
-- Some dependencies might be installed but not detected
-- Manual verification is always recommended
+# Make executable
+chmod +x steam_proton_helper.py
 
-## Contributing
+# Run directly
+python3 steam_proton_helper.py
+```
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+### Steam installed but not detected
+- For Flatpak: Ensure `flatpak` command is available
+- For native: Check if `steam` is in your PATH
+- Run with `--verbose` to see detection attempts
 
-## License
-
-This project is open source and available under the MIT License.
+### VDF parsing fails
+The script includes a minimal VDF parser. If `libraryfolders.vdf` has an unusual format:
+- Run with `--verbose` to see parsing details
+- The script will fall back to default paths
 
 ## Resources
 
 - [Steam for Linux](https://store.steampowered.com/linux)
 - [Proton GitHub](https://github.com/ValveSoftware/Proton)
+- [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom)
 - [ProtonDB](https://www.protondb.com/)
 - [Linux Gaming Wiki](https://linux-gaming.kwindu.eu/)
-- [r/linux_gaming](https://www.reddit.com/r/linux_gaming/)
+
+## License
+
+This project is open source and available under the MIT License.
 
 ## Disclaimer
 
-This tool is provided as-is for informational purposes. Always verify system changes before executing suggested commands. The authors are not responsible for any system modifications.
+This tool is provided as-is for informational purposes. It does **not** install packages by default. Always verify system changes before executing suggested commands.

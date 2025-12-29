@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2025-12-27
+
 ### Added
 - **Game name search** - `--game` now accepts game names, not just AppIDs
 - **Batch check** - Check multiple games with `--game A --game B` or `--game "A,B"`
@@ -14,24 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Steam Store API integration for game name resolution
 - Shows multiple matches when search is ambiguous
 - JSON output for batch and search queries
-- 16 new unit tests (135 total)
-
-### Changed
-- N/A
-
-### Fixed
-- N/A
-
-## [1.4.0] - 2025-12-27
-
-### Added
 - **ProtonDB integration** - Check game compatibility with `--game APPID`
 - Fetch tier rating (platinum/gold/silver/bronze/borked)
 - Display confidence score, total reports, and trending tier
 - JSON output support for ProtonDB queries
-- 7 new unit tests for ProtonDB functionality (119 total)
+- 23 new unit tests (135 total)
 
-## [1.3.0] - 2025-12-28
+## [1.3.0] - 2025-12-27
 
 ### Added
 - **--version / -V flag** - Display version from CLI
@@ -50,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded to 23 total checks across 10 categories
 - Updated MANIFEST.in to include completions
 
-## [1.2.0] - 2025-12-28
+## [1.2.0] - 2025-12-27
 
 ### Added
 - **GameMode check** - Detects GameMode daemon for CPU/IO optimization

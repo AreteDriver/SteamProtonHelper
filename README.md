@@ -1,5 +1,10 @@
 # Steam Proton Helper
 
+[![PyPI version](https://img.shields.io/pypi/v/steam-proton-helper)](https://pypi.org/project/steam-proton-helper/)
+[![Python versions](https://img.shields.io/pypi/pyversions/steam-proton-helper)](https://pypi.org/project/steam-proton-helper/)
+[![CI](https://github.com/AreteDriver/SteamProtonHelper/actions/workflows/ci.yml/badge.svg)](https://github.com/AreteDriver/SteamProtonHelper/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A comprehensive Linux tool designed to streamline the setup and troubleshooting of Steam and Proton for gaming on Linux. This helper application automatically detects missing dependencies, validates system configurations, and provides actionable fixes to eliminate common barriers that prevent Windows games from running smoothly on Linux.
 
 **Note:** This tool is a **read-only checker** by default. Use `--apply` to auto-install missing packages.

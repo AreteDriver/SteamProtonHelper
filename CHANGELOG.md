@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2025-12-29
+
+### Added
+- **--install-proton flag** - Download and install GE-Proton versions
+- `--install-proton list` shows available versions with install status
+- `--install-proton latest` installs the newest GE-Proton
+- `--install-proton GE-Proton10-26` installs specific version
+- `--force` flag to reinstall existing versions
+- Progress indicator during download
+- Automatic extraction to Steam's compatibilitytools.d
+- JSON output support for version listing
+- 4 new unit tests (142 total)
+
 ## [1.6.0] - 2025-12-29
 
 ### Added
@@ -124,7 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.3.0...v1.4.0

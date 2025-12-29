@@ -6,7 +6,7 @@ This tool checks dependencies, validates installations, and reports system readi
 for Steam gaming. It does NOT install packages by default.
 """
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 __author__ = "SteamProtonHelper Contributors"
 
 import argparse
@@ -1429,6 +1429,229 @@ def get_tier_symbol(tier: str) -> str:
     return tier_symbols.get(tier.lower(), '❓')
 
 
+# -----------------------------------------------------------------------------
+# GE-Proton Installation
+# -----------------------------------------------------------------------------
+
+@dataclass
+class GEProtonRelease:
+    """Information about a GE-Proton release."""
+    tag_name: str
+    name: str
+    download_url: str
+    size_bytes: int
+    published_at: str
+
+
+def fetch_ge_proton_releases(limit: int = 10) -> List[GEProtonRelease]:
+    """
+    Fetch available GE-Proton releases from GitHub.
+
+    Args:
+        limit: Maximum number of releases to fetch.
+
+    Returns:
+        List of GEProtonRelease objects.
+    """
+    import urllib.request
+    import urllib.error
+
+    url = f"https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page={limit}"
+
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'steam-proton-helper'})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            releases_data = json.loads(response.read().decode('utf-8'))
+
+            releases = []
+            for r in releases_data:
+                # Find the .tar.gz asset
+                tar_asset = None
+                for asset in r.get('assets', []):
+                    if asset['name'].endswith('.tar.gz') and 'proton' in asset['name'].lower():
+                        tar_asset = asset
+                        break
+
+                if tar_asset:
+                    releases.append(GEProtonRelease(
+                        tag_name=r['tag_name'],
+                        name=r['name'],
+                        download_url=tar_asset['browser_download_url'],
+                        size_bytes=tar_asset['size'],
+                        published_at=r['published_at'][:10],  # Just the date
+                    ))
+
+            return releases
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError) as e:
+        verbose_log.log(f"Error fetching GE-Proton releases: {e}")
+        return []
+
+
+def get_proton_install_dir(variant: Optional[SteamVariant] = None) -> Optional[str]:
+    """
+    Get the compatibilitytools.d directory for installing custom Proton.
+
+    Args:
+        variant: Steam installation variant.
+
+    Returns:
+        Path to compatibilitytools.d or None if not found.
+    """
+    # Check common locations
+    paths_to_try = [
+        os.path.expanduser('~/.steam/root/compatibilitytools.d'),
+        os.path.expanduser('~/.local/share/Steam/compatibilitytools.d'),
+        os.path.expanduser('~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d'),
+    ]
+
+    # Also check based on detected Steam root
+    steam_root = find_steam_root()
+    if steam_root:
+        paths_to_try.insert(0, os.path.join(steam_root, 'compatibilitytools.d'))
+
+    for path in paths_to_try:
+        parent = os.path.dirname(path)
+        if os.path.isdir(parent):
+            # Create compatibilitytools.d if parent exists
+            if not os.path.exists(path):
+                try:
+                    os.makedirs(path)
+                    verbose_log.log(f"Created directory: {path}")
+                except OSError:
+                    continue
+            return path
+
+    return None
+
+
+def download_with_progress(url: str, dest_path: str, show_progress: bool = True) -> bool:
+    """
+    Download a file with progress indication.
+
+    Args:
+        url: URL to download from.
+        dest_path: Destination file path.
+        show_progress: Whether to show progress bar.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    import urllib.request
+    import urllib.error
+
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'steam-proton-helper'})
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            total_size = int(response.headers.get('Content-Length', 0))
+            block_size = 8192
+            downloaded = 0
+
+            with open(dest_path, 'wb') as f:
+                while True:
+                    chunk = response.read(block_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    if show_progress and total_size > 0:
+                        percent = (downloaded / total_size) * 100
+                        mb_downloaded = downloaded / (1024 * 1024)
+                        mb_total = total_size / (1024 * 1024)
+                        print(f"\r  Downloading: {mb_downloaded:.1f}/{mb_total:.1f} MB ({percent:.1f}%)", end='', flush=True)
+
+            if show_progress:
+                print()  # New line after progress
+
+        return True
+    except (urllib.error.URLError, OSError) as e:
+        verbose_log.log(f"Download error: {e}")
+        return False
+
+
+def install_ge_proton(version: str, force: bool = False) -> Tuple[bool, str]:
+    """
+    Download and install a GE-Proton version.
+
+    Args:
+        version: Version to install (e.g., "GE-Proton10-26" or "latest").
+        force: Overwrite if already installed.
+
+    Returns:
+        Tuple of (success, message).
+    """
+    import tarfile
+    import tempfile
+
+    # Fetch releases
+    releases = fetch_ge_proton_releases(limit=20)
+    if not releases:
+        return False, "Failed to fetch GE-Proton releases. Check your internet connection."
+
+    # Find the requested version
+    target_release = None
+    if version.lower() == 'latest':
+        target_release = releases[0]
+    else:
+        # Try exact match first
+        for r in releases:
+            if r.tag_name.lower() == version.lower():
+                target_release = r
+                break
+        # Try partial match
+        if not target_release:
+            for r in releases:
+                if version.lower() in r.tag_name.lower():
+                    target_release = r
+                    break
+
+    if not target_release:
+        available = ', '.join([r.tag_name for r in releases[:5]])
+        return False, f"Version '{version}' not found. Available: {available}..."
+
+    # Get install directory
+    install_dir = get_proton_install_dir()
+    if not install_dir:
+        return False, "Could not find Steam compatibilitytools.d directory. Is Steam installed?"
+
+    # Check if already installed
+    target_path = os.path.join(install_dir, target_release.tag_name)
+    if os.path.exists(target_path):
+        if not force:
+            return False, f"{target_release.tag_name} is already installed. Use --force to reinstall."
+        else:
+            shutil.rmtree(target_path)
+            verbose_log.log(f"Removed existing installation: {target_path}")
+
+    # Download
+    print(f"\n{Color.BOLD}Installing {target_release.tag_name}{Color.END}")
+    print(f"  Size: {target_release.size_bytes / (1024 * 1024):.0f} MB")
+    print(f"  Released: {target_release.published_at}")
+    print()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tar_path = os.path.join(tmpdir, f"{target_release.tag_name}.tar.gz")
+
+        # Download
+        if not download_with_progress(target_release.download_url, tar_path):
+            return False, "Download failed. Check your internet connection."
+
+        # Extract
+        print(f"  Extracting to {install_dir}...")
+        try:
+            with tarfile.open(tar_path, 'r:gz') as tar:
+                tar.extractall(path=install_dir)
+        except (tarfile.TarError, OSError) as e:
+            return False, f"Extraction failed: {e}"
+
+    # Verify installation
+    if os.path.isdir(target_path):
+        return True, f"Successfully installed {target_release.tag_name}\n  Location: {target_path}\n\n  Restart Steam to use it."
+    else:
+        return True, f"Installed to {install_dir}. Restart Steam to use it."
+
+
 def print_protondb_info(info: ProtonDBInfo, use_color: bool = True) -> None:
     """Print ProtonDB compatibility info."""
     tier_color = get_tier_color(info.tier) if use_color else ''
@@ -2046,7 +2269,8 @@ Examples:
   %(prog)s                       Run all checks with colored output
   %(prog)s --json                Output results as JSON
   %(prog)s --list-proton         List all detected Proton versions
-  %(prog)s --list-proton -v      List Proton versions with full paths
+  %(prog)s --install-proton list List available GE-Proton versions
+  %(prog)s --install-proton latest  Install latest GE-Proton
   %(prog)s --game "elden ring"   Check ProtonDB rating by game name
   %(prog)s --game 292030         Check ProtonDB rating by AppID
   %(prog)s --game A --game B     Check multiple games
@@ -2063,6 +2287,7 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
       Use --game with a game name or Steam AppID to check ProtonDB compatibility.
       Use --search to find AppIDs without querying ProtonDB.
       Use --list-proton to see all installed Proton versions.
+      Use --install-proton to download and install GE-Proton.
 """
     )
 
@@ -2133,6 +2358,18 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
         '--list-proton',
         action='store_true',
         help='List all detected Proton installations'
+    )
+
+    parser.add_argument(
+        '--install-proton',
+        metavar='VERSION',
+        help='Install GE-Proton version (use "latest" for newest, "list" to see available)'
+    )
+
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Force reinstall even if version already exists (use with --install-proton)'
     )
 
     return parser.parse_args()
@@ -2247,7 +2484,75 @@ def main() -> int:
                 print("  2. Enable 'Enable Steam Play for all other titles'")
                 print("  3. Select a Proton version and restart Steam")
                 print("\nFor GE-Proton, see: https://github.com/GloriousEggroll/proton-ge-custom")
+                print("  Or use: steam-proton-helper --install-proton latest")
         return 0
+
+    # Handle --install-proton flag
+    if args.install_proton:
+        version = args.install_proton
+
+        # Handle "list" command
+        if version.lower() == 'list':
+            releases = fetch_ge_proton_releases(limit=15)
+
+            if not releases:
+                if args.json:
+                    print(json.dumps({"error": "Failed to fetch releases", "releases": []}, indent=2))
+                else:
+                    print(f"{Color.RED}Failed to fetch releases. Check your internet connection.{Color.END}")
+                return 1
+
+            if args.json:
+                output = {
+                    "releases": [
+                        {
+                            "version": r.tag_name,
+                            "name": r.name,
+                            "size_mb": round(r.size_bytes / (1024 * 1024)),
+                            "released": r.published_at,
+                            "download_url": r.download_url
+                        }
+                        for r in releases
+                    ]
+                }
+                print(json.dumps(output, indent=2))
+            else:
+                print(f"\n{Color.BOLD}Available GE-Proton Releases{Color.END}\n")
+                # Check what's installed
+                steam_root = find_steam_root()
+                installed_protons = find_proton_installations(steam_root) if steam_root else []
+                installed_names = {p.name.lower() for p in installed_protons}
+
+                for r in releases:
+                    size_mb = r.size_bytes / (1024 * 1024)
+                    is_installed = r.tag_name.lower() in installed_names
+
+                    if is_installed:
+                        status = f"{Color.GREEN}✓ installed{Color.END}"
+                    else:
+                        status = ""
+
+                    print(f"  {r.tag_name:<20} {size_mb:>6.0f} MB  {r.published_at}  {status}")
+
+                print(f"\n  {Color.DIM}Install with: steam-proton-helper --install-proton <version>{Color.END}")
+                print(f"  {Color.DIM}Example: steam-proton-helper --install-proton latest{Color.END}")
+            return 0
+
+        # Install the requested version
+        try:
+            success, message = install_ge_proton(version, force=args.force)
+            if success:
+                print(f"\n{Color.GREEN}✓ {message}{Color.END}")
+                return 0
+            else:
+                print(f"\n{Color.RED}✗ {message}{Color.END}")
+                return 1
+        except KeyboardInterrupt:
+            print(f"\n{Color.YELLOW}Installation cancelled.{Color.END}")
+            return 130
+        except Exception as e:
+            print(f"\n{Color.RED}Error: {e}{Color.END}")
+            return 1
 
     # Handle --game flag (ProtonDB lookup)
     if args.game:

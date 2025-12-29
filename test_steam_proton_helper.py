@@ -1432,6 +1432,32 @@ class TestArgumentParsing(unittest.TestCase):
             self.assertTrue(args.list_proton)
             self.assertTrue(args.verbose)
 
+    def test_install_proton_flag(self):
+        """Test --install-proton flag"""
+        with patch('sys.argv', ['prog', '--install-proton', 'latest']):
+            args = parse_args()
+            self.assertEqual(args.install_proton, 'latest')
+
+    def test_install_proton_list(self):
+        """Test --install-proton list"""
+        with patch('sys.argv', ['prog', '--install-proton', 'list']):
+            args = parse_args()
+            self.assertEqual(args.install_proton, 'list')
+
+    def test_install_proton_with_force(self):
+        """Test --install-proton with --force"""
+        with patch('sys.argv', ['prog', '--install-proton', 'GE-Proton10-26', '--force']):
+            args = parse_args()
+            self.assertEqual(args.install_proton, 'GE-Proton10-26')
+            self.assertTrue(args.force)
+
+    def test_install_proton_with_json(self):
+        """Test --install-proton list with --json"""
+        with patch('sys.argv', ['prog', '--install-proton', 'list', '--json']):
+            args = parse_args()
+            self.assertEqual(args.install_proton, 'list')
+            self.assertTrue(args.json)
+
 
 # =============================================================================
 # Test Fix Script Generation

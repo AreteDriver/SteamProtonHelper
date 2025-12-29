@@ -105,6 +105,8 @@ options:
   --game NAME      Check ProtonDB compatibility by game name or AppID
   --search QUERY   Search Steam for games (returns AppIDs, no ProtonDB lookup)
   --list-proton    List all detected Proton installations
+  --install-proton VERSION  Install GE-Proton (use "latest" or "list")
+  --force          Force reinstall if already installed
 ```
 
 ### Examples
@@ -165,6 +167,12 @@ options:
 ./steam_proton_helper.py --list-proton
 ./steam_proton_helper.py --list-proton --verbose  # Show full paths
 ./steam_proton_helper.py --list-proton --json     # JSON output
+
+# Install GE-Proton
+./steam_proton_helper.py --install-proton list    # See available versions
+./steam_proton_helper.py --install-proton latest  # Install latest
+./steam_proton_helper.py --install-proton GE-Proton10-26  # Specific version
+./steam_proton_helper.py --install-proton latest --force  # Reinstall
 ```
 
 ### Exit Codes

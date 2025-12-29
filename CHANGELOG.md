@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2025-12-29
+
+### Added
+- **--list-proton flag** - List all detected Proton installations
+- Separates official Steam Proton from custom builds (GE-Proton, etc.)
+- JSON output support with `--list-proton --json`
+- Verbose mode shows full installation paths
+- 3 new unit tests (138 total)
+
 ## [1.5.0] - 2025-12-29
 
 ### Added
@@ -115,7 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.2.0...v1.3.0

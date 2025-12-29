@@ -104,6 +104,7 @@ options:
   --yes, -y        Skip confirmation prompt (use with --apply)
   --game NAME      Check ProtonDB compatibility by game name or AppID
   --search QUERY   Search Steam for games (returns AppIDs, no ProtonDB lookup)
+  --list-proton    List all detected Proton installations
 ```
 
 ### Examples
@@ -159,6 +160,11 @@ options:
 # Search Steam for games (get AppIDs without ProtonDB lookup)
 ./steam_proton_helper.py --search "witcher"
 ./steam_proton_helper.py --search "souls" --json
+
+# List all installed Proton versions
+./steam_proton_helper.py --list-proton
+./steam_proton_helper.py --list-proton --verbose  # Show full paths
+./steam_proton_helper.py --list-proton --json     # JSON output
 ```
 
 ### Exit Codes

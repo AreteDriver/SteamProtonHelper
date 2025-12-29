@@ -6,7 +6,7 @@ This tool checks dependencies, validates installations, and reports system readi
 for Steam gaming. It does NOT install packages by default.
 """
 
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 __author__ = "SteamProtonHelper Contributors"
 
 import argparse
@@ -2045,6 +2045,8 @@ def parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s                       Run all checks with colored output
   %(prog)s --json                Output results as JSON
+  %(prog)s --list-proton         List all detected Proton versions
+  %(prog)s --list-proton -v      List Proton versions with full paths
   %(prog)s --game "elden ring"   Check ProtonDB rating by game name
   %(prog)s --game 292030         Check ProtonDB rating by AppID
   %(prog)s --game A --game B     Check multiple games
@@ -2060,6 +2062,7 @@ Examples:
 Note: Use --dry-run to preview before --apply. Requires sudo for installation.
       Use --game with a game name or Steam AppID to check ProtonDB compatibility.
       Use --search to find AppIDs without querying ProtonDB.
+      Use --list-proton to see all installed Proton versions.
 """
     )
 
@@ -2126,6 +2129,12 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
         help='Search Steam for games by name (returns AppIDs without ProtonDB lookup)'
     )
 
+    parser.add_argument(
+        '--list-proton',
+        action='store_true',
+        help='List all detected Proton installations'
+    )
+
     return parser.parse_args()
 
 
@@ -2167,6 +2176,78 @@ def main() -> int:
         except Exception as e:
             print(f"Error searching Steam: {e}", file=sys.stderr)
             return 1
+
+    # Handle --list-proton flag
+    if getattr(args, 'list_proton', False):
+        # Detect Steam
+        variant, steam_msg = detect_steam_variant()
+        steam_root = find_steam_root()
+
+        if not steam_root:
+            if args.json:
+                print(json.dumps({"error": "Steam not found", "proton_installations": []}, indent=2))
+            else:
+                print(f"{Color.RED}✗ Steam not found{Color.END}")
+                print("  Install Steam first to detect Proton versions.")
+            return 1
+
+        # Find Proton installations
+        protons = find_proton_installations(steam_root)
+
+        if args.json:
+            output = {
+                "steam_root": steam_root,
+                "steam_variant": variant.value if variant else None,
+                "count": len(protons),
+                "proton_installations": [
+                    {
+                        "name": p.name,
+                        "path": p.path,
+                        "has_executable": p.has_executable,
+                        "has_toolmanifest": p.has_toolmanifest,
+                        "has_version": p.has_version,
+                        "type": "custom" if "compatibilitytools.d" in p.path else "official"
+                    }
+                    for p in sorted(protons, key=lambda x: x.name.lower())
+                ]
+            }
+            print(json.dumps(output, indent=2))
+        else:
+            if protons:
+                print(f"\n{Color.BOLD}Proton Installations{Color.END} ({len(protons)} found)\n")
+                print(f"  Steam Root: {steam_root}\n")
+
+                # Separate official and custom
+                official = [p for p in protons if "compatibilitytools.d" not in p.path]
+                custom = [p for p in protons if "compatibilitytools.d" in p.path]
+
+                if official:
+                    print(f"  {Color.CYAN}── Official (Steam) ──{Color.END}")
+                    for p in sorted(official, key=lambda x: x.name.lower()):
+                        status = f"{Color.GREEN}✓{Color.END}" if p.has_executable else f"{Color.YELLOW}?{Color.END}"
+                        print(f"    {status} {p.name}")
+                        if args.verbose:
+                            print(f"      {Color.DIM}{p.path}{Color.END}")
+                    print()
+
+                if custom:
+                    print(f"  {Color.CYAN}── Custom (compatibilitytools.d) ──{Color.END}")
+                    for p in sorted(custom, key=lambda x: x.name.lower()):
+                        status = f"{Color.GREEN}✓{Color.END}" if p.has_executable else f"{Color.YELLOW}?{Color.END}"
+                        print(f"    {status} {p.name}")
+                        if args.verbose:
+                            print(f"      {Color.DIM}{p.path}{Color.END}")
+                    print()
+
+                print(f"  {Color.DIM}Use --verbose to see full paths{Color.END}")
+            else:
+                print(f"\n{Color.YELLOW}No Proton installations found.{Color.END}")
+                print("\nTo install Proton:")
+                print("  1. Open Steam → Settings → Compatibility")
+                print("  2. Enable 'Enable Steam Play for all other titles'")
+                print("  3. Select a Proton version and restart Steam")
+                print("\nFor GE-Proton, see: https://github.com/GloriousEggroll/proton-ge-custom")
+        return 0
 
     # Handle --game flag (ProtonDB lookup)
     if args.game:

@@ -1412,6 +1412,26 @@ class TestArgumentParsing(unittest.TestCase):
             args = parse_args()
             self.assertEqual(args.fix, 'fix.sh')
 
+    def test_list_proton_flag(self):
+        """Test --list-proton flag"""
+        with patch('sys.argv', ['prog', '--list-proton']):
+            args = parse_args()
+            self.assertTrue(args.list_proton)
+
+    def test_list_proton_with_json(self):
+        """Test --list-proton with --json"""
+        with patch('sys.argv', ['prog', '--list-proton', '--json']):
+            args = parse_args()
+            self.assertTrue(args.list_proton)
+            self.assertTrue(args.json)
+
+    def test_list_proton_with_verbose(self):
+        """Test --list-proton with --verbose"""
+        with patch('sys.argv', ['prog', '--list-proton', '-v']):
+            args = parse_args()
+            self.assertTrue(args.list_proton)
+            self.assertTrue(args.verbose)
+
 
 # =============================================================================
 # Test Fix Script Generation

@@ -15,7 +15,11 @@ _steam-proton-helper() {
         '--apply[Auto-install missing packages]'
         '--dry-run[Show what --apply would install]'
         '(-y --yes)'{-y,--yes}'[Skip confirmation prompt]'
-        '--game[Check ProtonDB compatibility for Steam game]:appid:'
+        '*--game[Check ProtonDB compatibility for Steam game]:name or appid:'
+        '--search[Search Steam for games by name]:query:'
+        '--list-proton[List all detected Proton installations]'
+        '--install-proton[Install GE-Proton version]:version:(list latest)'
+        '--force[Force reinstall if already installed]'
     )
 
     _arguments -s -S $opts

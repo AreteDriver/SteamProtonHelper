@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2025-12-29
+
+### Changed
+- Updated shell completions (Bash, Zsh, Fish) with new flags:
+  - `--search` - Search Steam for games
+  - `--list-proton` - List installed Proton versions
+  - `--install-proton` - Install GE-Proton (with `list`/`latest` suggestions)
+  - `--force` - Force reinstall
+
 ## [1.7.0] - 2025-12-29
 
 ### Added
@@ -137,7 +146,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.4.0...v1.5.0

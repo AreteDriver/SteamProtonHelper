@@ -8,7 +8,7 @@ _steam_proton_helper() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     # All available options
-    opts="--help --version --json --no-color --verbose --fix --apply --dry-run --yes --game -h -V -v -y"
+    opts="--help --version --json --no-color --verbose --fix --apply --dry-run --yes --game --search --list-proton --install-proton --force -h -V -v -y"
 
     # Handle options that take arguments
     case "${prev}" in
@@ -17,8 +17,13 @@ _steam_proton_helper() {
             COMPREPLY=( $(compgen -f -- "${cur}") )
             return 0
             ;;
-        --game)
-            # No completion for AppID - user must enter it
+        --game|--search)
+            # No completion for game name/AppID - user must enter it
+            return 0
+            ;;
+        --install-proton)
+            # Suggest common values for --install-proton
+            COMPREPLY=( $(compgen -W "list latest" -- "${cur}") )
             return 0
             ;;
     esac

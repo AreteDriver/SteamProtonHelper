@@ -51,7 +51,7 @@ SteamProtonHelper serves as your **first-line diagnostic and setup assistant** f
 
 ### Prerequisites
 - Linux operating system (x86_64)
-- Python 3.6 or higher
+- Python 3.8 or higher
 - Terminal access
 
 ### Installation
@@ -430,12 +430,154 @@ The script includes a minimal VDF parser. If `libraryfolders.vdf` has an unusual
 - Run with `--verbose` to see parsing details
 - The script will fall back to default paths
 
+## Custom Proton Versions
+
+Steam Proton Helper automatically detects custom Proton builds installed in `compatibilitytools.d`. Here's how to install and manage them.
+
+### Installing GE-Proton (Recommended)
+
+[GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom) is the most popular custom Proton build with additional patches and fixes.
+
+**Manual Installation:**
+```bash
+# Create the compatibility tools directory
+mkdir -p ~/.steam/root/compatibilitytools.d
+
+# Download latest GE-Proton (check GitHub for current version)
+cd /tmp
+wget https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton9-22/GE-Proton9-22.tar.gz
+
+# Extract to Steam's compatibility tools directory
+tar -xzf GE-Proton9-22.tar.gz -C ~/.steam/root/compatibilitytools.d/
+
+# Restart Steam to detect the new Proton version
+```
+
+**Using ProtonUp-Qt (Easier):**
+```bash
+# Install ProtonUp-Qt
+flatpak install flathub net.davidotek.pupgui2
+
+# Run and select GE-Proton versions to install
+flatpak run net.davidotek.pupgui2
+```
+
+### Custom Proton Locations
+
+Steam looks for custom Proton builds in these directories:
+
+| Steam Type | Path |
+|------------|------|
+| Native | `~/.steam/root/compatibilitytools.d/` |
+| Native (alt) | `~/.local/share/Steam/compatibilitytools.d/` |
+| Flatpak | `~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d/` |
+
+### Other Custom Proton Builds
+
+| Build | Description | Link |
+|-------|-------------|------|
+| GE-Proton | Patches for better game compatibility | [GitHub](https://github.com/GloriousEggroll/proton-ge-custom) |
+| Proton-TKG | Highly configurable, build-your-own | [GitHub](https://github.com/Frogging-Family/wine-tkg-git) |
+| Proton Experimental | Valve's bleeding-edge builds | Steam Library → Tools |
+
+### Selecting Proton Version Per-Game
+
+1. Right-click the game in Steam → **Properties**
+2. Go to **Compatibility** tab
+3. Check **"Force the use of a specific Steam Play compatibility tool"**
+4. Select your preferred Proton version from the dropdown
+
+## Steam Launch Options
+
+Launch options let you customize how games run. Set them via:
+**Right-click game → Properties → General → Launch Options**
+
+### Common Launch Options
+
+| Option | Description |
+|--------|-------------|
+| `PROTON_USE_WINED3D=1 %command%` | Use OpenGL instead of Vulkan (for older GPUs) |
+| `PROTON_NO_ESYNC=1 %command%` | Disable esync (fixes some crashes) |
+| `PROTON_NO_FSYNC=1 %command%` | Disable fsync (fixes some crashes) |
+| `DXVK_HUD=fps %command%` | Show FPS counter |
+| `DXVK_HUD=full %command%` | Show full DXVK stats overlay |
+| `mangohud %command%` | Use MangoHud overlay (if installed) |
+| `gamemoderun %command%` | Enable GameMode optimizations (if installed) |
+| `PROTON_LOG=1 %command%` | Enable Proton logging for debugging |
+| `WINEDEBUG=-all %command%` | Suppress Wine debug output |
+
+### Performance Launch Options
+
+```bash
+# Maximum performance (combine as needed)
+gamemoderun mangohud %command%
+
+# For AMD GPUs - enable ACO shader compiler
+RADV_PERFTEST=aco %command%
+
+# Limit FPS to reduce heat/power
+DXVK_FRAME_RATE=60 %command%
+
+# Use specific GPU (multi-GPU systems)
+DRI_PRIME=1 %command%
+```
+
+### Troubleshooting Launch Options
+
+```bash
+# Game crashes on startup - try disabling sync
+PROTON_NO_ESYNC=1 PROTON_NO_FSYNC=1 %command%
+
+# Black screen or rendering issues
+PROTON_USE_WINED3D=1 %command%
+
+# Enable verbose logging
+PROTON_LOG=1 WINEDEBUG=+loaddll %command%
+
+# Skip launcher/intro videos (game-specific)
+%command% -skipintro -novid
+```
+
+### Game-Specific Examples
+
+```bash
+# Elden Ring - common fixes
+PROTON_NO_FSYNC=1 %command%
+
+# Cyberpunk 2077 - performance mode
+gamemoderun mangohud DXVK_ASYNC=1 %command%
+
+# Older DirectX 9 games
+PROTON_USE_WINED3D=1 %command%
+
+# Unity games with cursor issues
+PROTON_USE_WINED3D=1 %command%
+```
+
+### Environment Variables Reference
+
+| Variable | Values | Description |
+|----------|--------|-------------|
+| `PROTON_USE_WINED3D` | 0/1 | Use OpenGL instead of DXVK |
+| `PROTON_NO_ESYNC` | 0/1 | Disable eventfd-based synchronization |
+| `PROTON_NO_FSYNC` | 0/1 | Disable futex-based synchronization |
+| `PROTON_FORCE_LARGE_ADDRESS_AWARE` | 0/1 | Force LAA for 32-bit games |
+| `PROTON_OLD_GL_STRING` | 0/1 | Use old OpenGL version string |
+| `PROTON_ENABLE_NVAPI` | 0/1 | Enable NVAPI for NVIDIA features |
+| `DXVK_HUD` | fps/full/off | DXVK overlay settings |
+| `DXVK_ASYNC` | 0/1 | Async shader compilation (reduces stutter) |
+| `DXVK_FRAME_RATE` | number | Limit framerate |
+| `MANGOHUD` | 0/1 | Enable MangoHud overlay |
+| `WINE_FULLSCREEN_FSR` | 0/1 | Enable AMD FSR upscaling |
+| `WINE_FULLSCREEN_FSR_STRENGTH` | 0-5 | FSR sharpening (0=max, 5=min) |
+
 ## Resources
 
 - [Steam for Linux](https://store.steampowered.com/linux)
 - [Proton GitHub](https://github.com/ValveSoftware/Proton)
 - [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom)
 - [ProtonDB](https://www.protondb.com/)
+- [ProtonUp-Qt](https://github.com/DavidoTek/ProtonUp-Qt)
 - [Linux Gaming Wiki](https://linux-gaming.kwindu.eu/)
 
 ## License

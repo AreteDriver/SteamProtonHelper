@@ -6,7 +6,7 @@ This tool checks dependencies, validates installations, and reports system readi
 for Steam gaming. It does NOT install packages by default.
 """
 
-__version__ = "1.7.1"
+__version__ = "1.8.0"
 __author__ = "SteamProtonHelper Contributors"
 
 import argparse
@@ -1652,6 +1652,93 @@ def install_ge_proton(version: str, force: bool = False) -> Tuple[bool, str]:
         return True, f"Installed to {install_dir}. Restart Steam to use it."
 
 
+def get_removable_proton_versions() -> List[Tuple[str, str]]:
+    """
+    Get list of custom Proton versions that can be removed.
+
+    Only returns Proton installations in compatibilitytools.d (custom builds).
+    Does NOT include official Steam Proton versions.
+
+    Returns:
+        List of tuples (name, path) for removable Proton versions.
+    """
+    steam_root = find_steam_root()
+    if not steam_root:
+        return []
+
+    protons = find_proton_installations(steam_root)
+    removable = []
+
+    for p in protons:
+        # Only include custom Proton from compatibilitytools.d
+        if 'compatibilitytools.d' in p.path:
+            removable.append((p.name, p.path))
+
+    return removable
+
+
+def remove_ge_proton(version: str, confirm: bool = True) -> Tuple[bool, str]:
+    """
+    Remove a custom Proton version.
+
+    Args:
+        version: Version name to remove (e.g., "GE-Proton10-26").
+        confirm: Whether to prompt for confirmation (skipped if --yes).
+
+    Returns:
+        Tuple of (success, message).
+    """
+    # Get removable versions
+    removable = get_removable_proton_versions()
+
+    if not removable:
+        return False, "No custom Proton versions found to remove."
+
+    # Find the requested version
+    target = None
+    for name, path in removable:
+        if name.lower() == version.lower():
+            target = (name, path)
+            break
+
+    # Try partial match
+    if not target:
+        for name, path in removable:
+            if version.lower() in name.lower():
+                target = (name, path)
+                break
+
+    if not target:
+        available = ', '.join([name for name, _ in removable[:5]])
+        return False, f"Version '{version}' not found. Available: {available}"
+
+    name, path = target
+
+    # Safety check - ensure it's in compatibilitytools.d
+    if 'compatibilitytools.d' not in path:
+        return False, f"Cannot remove {name}: not a custom Proton version (official Steam Proton)."
+
+    # Confirm removal
+    if confirm:
+        print(f"\n{Color.YELLOW}Warning:{Color.END} This will permanently delete:")
+        print(f"  {path}")
+        try:
+            response = input(f"\nRemove {name}? [y/N] ").strip().lower()
+            if response not in ('y', 'yes'):
+                return False, "Removal cancelled."
+        except (KeyboardInterrupt, EOFError):
+            return False, "Removal cancelled."
+
+    # Remove the directory
+    try:
+        shutil.rmtree(path)
+        return True, f"Successfully removed {name}"
+    except PermissionError:
+        return False, f"Permission denied removing {path}. Try running with sudo."
+    except OSError as e:
+        return False, f"Failed to remove {name}: {e}"
+
+
 def print_protondb_info(info: ProtonDBInfo, use_color: bool = True) -> None:
     """Print ProtonDB compatibility info."""
     tier_color = get_tier_color(info.tier) if use_color else ''
@@ -2271,6 +2358,8 @@ Examples:
   %(prog)s --list-proton         List all detected Proton versions
   %(prog)s --install-proton list List available GE-Proton versions
   %(prog)s --install-proton latest  Install latest GE-Proton
+  %(prog)s --remove-proton list  List removable custom Proton versions
+  %(prog)s --remove-proton GE-Proton9-7  Remove a custom Proton version
   %(prog)s --game "elden ring"   Check ProtonDB rating by game name
   %(prog)s --game 292030         Check ProtonDB rating by AppID
   %(prog)s --game A --game B     Check multiple games
@@ -2288,6 +2377,7 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
       Use --search to find AppIDs without querying ProtonDB.
       Use --list-proton to see all installed Proton versions.
       Use --install-proton to download and install GE-Proton.
+      Use --remove-proton to uninstall custom Proton versions.
 """
     )
 
@@ -2370,6 +2460,12 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
         '--force',
         action='store_true',
         help='Force reinstall even if version already exists (use with --install-proton)'
+    )
+
+    parser.add_argument(
+        '--remove-proton',
+        metavar='VERSION',
+        help='Remove a custom Proton version (use "list" to see removable versions)'
     )
 
     return parser.parse_args()
@@ -2549,6 +2645,58 @@ def main() -> int:
                 return 1
         except KeyboardInterrupt:
             print(f"\n{Color.YELLOW}Installation cancelled.{Color.END}")
+            return 130
+        except Exception as e:
+            print(f"\n{Color.RED}Error: {e}{Color.END}")
+            return 1
+
+    # Handle --remove-proton flag
+    if args.remove_proton:
+        version = args.remove_proton
+
+        # Handle "list" command
+        if version.lower() == 'list':
+            removable = get_removable_proton_versions()
+
+            if args.json:
+                output = {
+                    "removable": [
+                        {"name": name, "path": path}
+                        for name, path in removable
+                    ]
+                }
+                print(json.dumps(output, indent=2))
+            elif removable:
+                print(f"\n{Color.BOLD}Removable Custom Proton Versions{Color.END}\n")
+                print(f"  {Color.DIM}Only custom Proton versions (in compatibilitytools.d) can be removed.{Color.END}")
+                print(f"  {Color.DIM}Official Steam Proton versions are managed by Steam.{Color.END}\n")
+
+                for name, path in removable:
+                    print(f"  {Color.CYAN}{name}{Color.END}")
+                    if args.verbose:
+                        print(f"    {Color.DIM}{path}{Color.END}")
+
+                print(f"\n  {Color.DIM}Remove with: steam-proton-helper --remove-proton <version>{Color.END}")
+                print(f"  {Color.DIM}Skip confirmation: steam-proton-helper --remove-proton <version> -y{Color.END}")
+            else:
+                print(f"\n{Color.YELLOW}No custom Proton versions found to remove.{Color.END}")
+                print("  Custom Proton versions are installed in ~/.steam/root/compatibilitytools.d/")
+                print("  Use --install-proton to install GE-Proton.")
+            return 0
+
+        # Remove the requested version
+        try:
+            confirm = not args.yes
+            success, message = remove_ge_proton(version, confirm=confirm)
+            if success:
+                print(f"\n{Color.GREEN}✓ {message}{Color.END}")
+                print("  Restart Steam to update the Proton list.")
+                return 0
+            else:
+                print(f"\n{Color.RED}✗ {message}{Color.END}")
+                return 1
+        except KeyboardInterrupt:
+            print(f"\n{Color.YELLOW}Removal cancelled.{Color.END}")
             return 130
         except Exception as e:
             print(f"\n{Color.RED}Error: {e}{Color.END}")

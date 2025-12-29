@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2025-12-29
+
+### Added
+- **--remove-proton flag** - Uninstall custom Proton versions
+- `--remove-proton list` shows removable custom Proton versions
+- `--remove-proton GE-Proton9-7` removes a specific version
+- Only custom Proton (compatibilitytools.d) can be removed, not official Steam Proton
+- Confirmation prompt before deletion (skip with `-y`)
+- JSON output support for version listing
+- 4 new unit tests (146 total)
+
 ## [1.7.1] - 2025-12-29
 
 ### Changed
@@ -146,7 +157,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple package managers (apt, dnf, pacman, zypper)
 - No external dependencies (Python standard library only)
 
-[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/AreteDriver/SteamProtonHelper/compare/v1.5.0...v1.6.0

@@ -1458,6 +1458,32 @@ class TestArgumentParsing(unittest.TestCase):
             self.assertEqual(args.install_proton, 'list')
             self.assertTrue(args.json)
 
+    def test_remove_proton_flag(self):
+        """Test --remove-proton flag"""
+        with patch('sys.argv', ['prog', '--remove-proton', 'GE-Proton10-26']):
+            args = parse_args()
+            self.assertEqual(args.remove_proton, 'GE-Proton10-26')
+
+    def test_remove_proton_list(self):
+        """Test --remove-proton list"""
+        with patch('sys.argv', ['prog', '--remove-proton', 'list']):
+            args = parse_args()
+            self.assertEqual(args.remove_proton, 'list')
+
+    def test_remove_proton_with_yes(self):
+        """Test --remove-proton with --yes to skip confirmation"""
+        with patch('sys.argv', ['prog', '--remove-proton', 'GE-Proton10-26', '-y']):
+            args = parse_args()
+            self.assertEqual(args.remove_proton, 'GE-Proton10-26')
+            self.assertTrue(args.yes)
+
+    def test_remove_proton_with_json(self):
+        """Test --remove-proton list with --json"""
+        with patch('sys.argv', ['prog', '--remove-proton', 'list', '--json']):
+            args = parse_args()
+            self.assertEqual(args.remove_proton, 'list')
+            self.assertTrue(args.json)
+
 
 # =============================================================================
 # Test Fix Script Generation

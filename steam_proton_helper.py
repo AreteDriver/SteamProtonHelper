@@ -17,7 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from enum import Enum
 from typing import List, Dict, Tuple, Optional, Any
 
@@ -698,7 +698,6 @@ class DependencyChecker:
 
         if protons:
             # List found Proton versions
-            names = [p.name for p in protons]
             checks.append(DependencyCheck(
                 name="Proton",
                 status=CheckStatus.PASS,
@@ -772,7 +771,7 @@ class DependencyChecker:
                     status=CheckStatus.WARNING,
                     message="glxinfo returned error (may need display)",
                     category="Graphics",
-                    details=f"This may be normal in headless/SSH sessions"
+                    details="This may be normal in headless/SSH sessions"
                 ))
         else:
             checks.append(DependencyCheck(
@@ -1456,7 +1455,7 @@ def get_proton_recommendations(info: ProtonDBInfo, installed_protons: List[str])
 
     # Check for GE-Proton in installed versions
     has_ge = any('ge-proton' in p or 'proton-ge' in p for p in installed_lower)
-    has_experimental = any('experimental' in p for p in installed_lower)
+    _ = has_ge  # Used in recommendation logic below
 
     if tier == 'platinum':
         # Platinum: Works great, recommend latest stable Proton
@@ -2092,9 +2091,9 @@ def print_summary(checks: List[DependencyCheck]) -> None:
 def print_tips() -> None:
     """Print helpful tips."""
     print(f"\n{Color.BOLD}Tips:{Color.END}")
-    print(f"  • Enable Proton in Steam: Settings → Compatibility → Enable Steam Play")
-    print(f"  • Keep graphics drivers updated for best performance")
-    print(f"  • Check game compatibility at protondb.com")
+    print("  • Enable Proton in Steam: Settings → Compatibility → Enable Steam Play")
+    print("  • Keep graphics drivers updated for best performance")
+    print("  • Check game compatibility at protondb.com")
     print()
 
 
@@ -2468,7 +2467,7 @@ def apply_fixes(
     if not skip_confirm:
         print(f"{Color.BOLD}This will run sudo to install packages.{Color.END}")
         try:
-            response = input(f"Continue? [y/N] ").strip().lower()
+            response = input("Continue? [y/N] ").strip().lower()
             if response not in ('y', 'yes'):
                 return (False, "Cancelled by user")
         except (EOFError, KeyboardInterrupt):
@@ -2708,7 +2707,7 @@ def main() -> int:
                     print(f"      https://store.steampowered.com/app/{app.appid}")
                     if i < len(results):
                         print()
-                print(f"\nUse --game <AppID> to check ProtonDB compatibility.")
+                print("\nUse --game <AppID> to check ProtonDB compatibility.")
             else:
                 print(f"No games found matching '{args.search}'.")
                 return 1
@@ -2953,106 +2952,6 @@ def main() -> int:
         except KeyboardInterrupt:
             print(f"\n{Color.YELLOW}Update cancelled.{Color.END}")
             return 130
-        except Exception as e:
-            print(f"\n{Color.RED}Error: {e}{Color.END}")
-            return 1
-
-    # Handle --recommend flag
-    if args.recommend:
-        try:
-            game_input = args.recommend
-
-            # Resolve game input
-            app_id, game_name, matches = resolve_game_input(game_input)
-
-            if matches:
-                # Multiple matches
-                if args.json:
-                    print(json.dumps({
-                        "error": "multiple_matches",
-                        "query": game_input,
-                        "matches": [{"appid": m.appid, "name": m.name} for m in matches]
-                    }, indent=2))
-                else:
-                    print(f"\nMultiple games found for '{game_input}':\n")
-                    for i, app in enumerate(matches[:10], 1):
-                        print(f"  {i}. {app.name} (AppID: {app.appid})")
-                    print(f"\nUse --recommend <AppID> for a specific game.")
-                return 1
-
-            if not app_id:
-                if args.json:
-                    print(json.dumps({"error": "game_not_found", "query": game_input}, indent=2))
-                else:
-                    print(f"{Color.RED}Game not found: {game_input}{Color.END}")
-                return 1
-
-            # Fetch reports
-            reports = fetch_protondb_reports(app_id)
-
-            if not reports:
-                if args.json:
-                    print(json.dumps({"error": "no_reports", "app_id": app_id}, indent=2))
-                else:
-                    print(f"{Color.YELLOW}No ProtonDB reports found for this game.{Color.END}")
-                return 1
-
-            # Analyze recommendations
-            recommendations = analyze_proton_recommendations(reports)
-
-            if args.json:
-                output = {
-                    "app_id": app_id,
-                    "game_name": game_name,
-                    "total_reports": len(reports),
-                    "recommendations": [
-                        {
-                            "proton_version": r.proton_version,
-                            "rating": r.rating,
-                            "report_count": r.report_count,
-                            "success_rate": round(r.success_rate, 2),
-                            "is_ge_proton": r.is_ge_proton,
-                        }
-                        for r in recommendations[:10]
-                    ]
-                }
-                print(json.dumps(output, indent=2))
-            else:
-                title = game_name or f"AppID {app_id}"
-                print(f"\n{Color.BOLD}Proton Recommendations for {title}{Color.END}")
-                print("─" * 50)
-                print(f"  Based on {len(reports)} ProtonDB reports\n")
-
-                if not recommendations:
-                    print(f"  {Color.YELLOW}No Proton version data in reports.{Color.END}")
-                    return 0
-
-                # Show top recommendations
-                print(f"  {Color.BOLD}Top Recommended Proton Versions:{Color.END}\n")
-                for i, rec in enumerate(recommendations[:5], 1):
-                    rating_color = get_tier_color(rec.rating)
-                    rating_symbol = get_tier_symbol(rec.rating)
-                    ge_badge = f" {Color.CYAN}[GE]{Color.END}" if rec.is_ge_proton else ""
-
-                    print(f"  {i}. {rec.proton_version}{ge_badge}")
-                    print(f"     {rating_symbol} {rating_color}{rec.rating.upper()}{Color.END} ({rec.report_count} reports, {rec.success_rate*100:.0f}% success)")
-
-                # Best overall recommendation
-                if recommendations:
-                    best = recommendations[0]
-                    print(f"\n  {Color.GREEN}✓ Best choice: {best.proton_version}{Color.END}")
-
-                    # Check if it's installed
-                    steam_root = find_steam_root()
-                    if steam_root:
-                        protons = find_proton_installations(steam_root)
-                        installed_names = [p.name.lower() for p in protons]
-                        if best.proton_version.lower() in installed_names:
-                            print(f"    {Color.DIM}(Already installed){Color.END}")
-                        elif best.is_ge_proton:
-                            print(f"    {Color.DIM}Install with: steam-proton-helper --install-proton {best.proton_version}{Color.END}")
-
-            return 0
         except Exception as e:
             print(f"\n{Color.RED}Error: {e}{Color.END}")
             return 1

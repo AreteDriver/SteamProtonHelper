@@ -1355,7 +1355,6 @@ class TestArgumentParsing(unittest.TestCase):
 
     def test_version_flag(self):
         """Test --version flag exits with version info"""
-        import steam_proton_helper
         with patch('sys.argv', ['prog', '--version']):
             with self.assertRaises(SystemExit) as cm:
                 parse_args()

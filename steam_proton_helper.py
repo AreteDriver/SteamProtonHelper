@@ -6,7 +6,7 @@ This tool checks dependencies, validates installations, and reports system readi
 for Steam gaming. It does NOT install packages by default.
 """
 
-__version__ = "1.8.0"
+__version__ = "1.9.0"
 __author__ = "SteamProtonHelper Contributors"
 
 import argparse
@@ -1429,6 +1429,112 @@ def get_tier_symbol(tier: str) -> str:
     return tier_symbols.get(tier.lower(), '❓')
 
 
+@dataclass
+class ProtonRecommendation:
+    """Proton version recommendation."""
+    proton_version: str
+    reason: str
+    priority: int  # Lower is better
+
+
+def get_proton_recommendations(info: ProtonDBInfo, installed_protons: List[str]) -> List[ProtonRecommendation]:
+    """
+    Generate Proton recommendations based on ProtonDB tier and installed versions.
+
+    Args:
+        info: ProtonDB game compatibility info.
+        installed_protons: List of installed Proton version names.
+
+    Returns:
+        List of ProtonRecommendation objects (best first).
+    """
+    recommendations = []
+    tier = info.tier.lower()
+
+    # Normalize installed names for comparison
+    installed_lower = [p.lower() for p in installed_protons]
+
+    # Check for GE-Proton in installed versions
+    has_ge = any('ge-proton' in p or 'proton-ge' in p for p in installed_lower)
+    has_experimental = any('experimental' in p for p in installed_lower)
+
+    if tier == 'platinum':
+        # Platinum: Works great, recommend latest stable Proton
+        recommendations.append(ProtonRecommendation(
+            proton_version="Proton Experimental",
+            reason="Platinum rating - works out of the box with latest Proton",
+            priority=1
+        ))
+        if has_ge:
+            recommendations.append(ProtonRecommendation(
+                proton_version="GE-Proton (latest)",
+                reason="GE-Proton also excellent for platinum games",
+                priority=2
+            ))
+    elif tier == 'gold':
+        # Gold: Works with tweaks, GE-Proton often helps
+        recommendations.append(ProtonRecommendation(
+            proton_version="GE-Proton (latest)",
+            reason="Gold rating - GE-Proton often has fixes for minor issues",
+            priority=1
+        ))
+        recommendations.append(ProtonRecommendation(
+            proton_version="Proton Experimental",
+            reason="Latest experimental also works well",
+            priority=2
+        ))
+    elif tier == 'silver':
+        # Silver: Has issues, GE-Proton strongly recommended
+        recommendations.append(ProtonRecommendation(
+            proton_version="GE-Proton (latest)",
+            reason="Silver rating - GE-Proton includes extra patches and codecs",
+            priority=1
+        ))
+        recommendations.append(ProtonRecommendation(
+            proton_version="Proton Experimental",
+            reason="Try experimental if GE doesn't work",
+            priority=2
+        ))
+    elif tier == 'bronze':
+        # Bronze: Problematic, try GE-Proton or older versions
+        recommendations.append(ProtonRecommendation(
+            proton_version="GE-Proton (latest)",
+            reason="Bronze rating - GE-Proton may have specific game fixes",
+            priority=1
+        ))
+        recommendations.append(ProtonRecommendation(
+            proton_version="Proton 8.0 or older",
+            reason="Older Proton versions sometimes work better for problematic games",
+            priority=2
+        ))
+    elif tier == 'borked':
+        # Borked: Very problematic
+        recommendations.append(ProtonRecommendation(
+            proton_version="GE-Proton (latest)",
+            reason="Borked rating - GE-Proton is the best chance for problematic games",
+            priority=1
+        ))
+        recommendations.append(ProtonRecommendation(
+            proton_version="Check ProtonDB reports",
+            reason="Game may require specific tweaks or launch options",
+            priority=2
+        ))
+    else:
+        # Pending or unknown
+        recommendations.append(ProtonRecommendation(
+            proton_version="Proton Experimental",
+            reason="Not enough data - try latest experimental first",
+            priority=1
+        ))
+        recommendations.append(ProtonRecommendation(
+            proton_version="GE-Proton (latest)",
+            reason="GE-Proton if experimental doesn't work",
+            priority=2
+        ))
+
+    return sorted(recommendations, key=lambda r: r.priority)
+
+
 # -----------------------------------------------------------------------------
 # GE-Proton Installation
 # -----------------------------------------------------------------------------
@@ -1737,6 +1843,85 @@ def remove_ge_proton(version: str, confirm: bool = True) -> Tuple[bool, str]:
         return False, f"Permission denied removing {path}. Try running with sudo."
     except OSError as e:
         return False, f"Failed to remove {name}: {e}"
+
+
+def check_ge_proton_updates() -> List[Dict[str, Any]]:
+    """
+    Check for available GE-Proton updates.
+
+    Returns:
+        List of dicts with 'installed', 'latest', 'update_available' keys.
+    """
+    # Get installed custom Proton versions
+    steam_root = find_steam_root()
+    if not steam_root:
+        return []
+
+    protons = find_proton_installations(steam_root)
+    installed_ge = [p for p in protons if 'compatibilitytools.d' in p.path and 'GE-Proton' in p.name]
+
+    # Fetch latest release
+    releases = fetch_ge_proton_releases(limit=1)
+    if not releases:
+        return []
+
+    latest = releases[0]
+
+    results = []
+    for p in installed_ge:
+        # Extract version number for comparison
+        installed_ver = p.name
+        is_latest = installed_ver.lower() == latest.tag_name.lower()
+
+        results.append({
+            'installed': installed_ver,
+            'path': p.path,
+            'latest': latest.tag_name,
+            'update_available': not is_latest,
+        })
+
+    # If no GE-Proton installed, indicate latest available
+    if not installed_ge:
+        results.append({
+            'installed': None,
+            'path': None,
+            'latest': latest.tag_name,
+            'update_available': True,
+        })
+
+    return results
+
+
+def update_ge_proton(force: bool = False) -> Tuple[bool, str]:
+    """
+    Update to the latest GE-Proton version.
+
+    Args:
+        force: Force reinstall even if already at latest.
+
+    Returns:
+        Tuple of (success, message).
+    """
+    # Check what's installed
+    updates = check_ge_proton_updates()
+
+    if not updates:
+        return False, "Could not check for updates. Check your internet connection."
+
+    # Find the latest version
+    latest_version = updates[0]['latest'] if updates else None
+    if not latest_version:
+        return False, "Could not determine latest GE-Proton version."
+
+    # Check if already have latest
+    has_latest = any(u['installed'] and u['installed'].lower() == latest_version.lower() for u in updates)
+
+    if has_latest and not force:
+        return True, f"Already up to date: {latest_version}"
+
+    # Install the latest version
+    success, message = install_ge_proton(latest_version, force=force)
+    return success, message
 
 
 def print_protondb_info(info: ProtonDBInfo, use_color: bool = True) -> None:
@@ -2360,6 +2545,8 @@ Examples:
   %(prog)s --install-proton latest  Install latest GE-Proton
   %(prog)s --remove-proton list  List removable custom Proton versions
   %(prog)s --remove-proton GE-Proton9-7  Remove a custom Proton version
+  %(prog)s --check-updates       Check if newer GE-Proton is available
+  %(prog)s --update-proton       Update to latest GE-Proton
   %(prog)s --game "elden ring"   Check ProtonDB rating by game name
   %(prog)s --game 292030         Check ProtonDB rating by AppID
   %(prog)s --game A --game B     Check multiple games
@@ -2378,6 +2565,8 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
       Use --list-proton to see all installed Proton versions.
       Use --install-proton to download and install GE-Proton.
       Use --remove-proton to uninstall custom Proton versions.
+      Use --check-updates to see if newer GE-Proton is available.
+      Use --update-proton to update to the latest GE-Proton.
 """
     )
 
@@ -2466,6 +2655,24 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
         '--remove-proton',
         metavar='VERSION',
         help='Remove a custom Proton version (use "list" to see removable versions)'
+    )
+
+    parser.add_argument(
+        '--update-proton',
+        action='store_true',
+        help='Update all installed GE-Proton versions to the latest release'
+    )
+
+    parser.add_argument(
+        '--check-updates',
+        action='store_true',
+        help='Check if newer GE-Proton versions are available (no installation)'
+    )
+
+    parser.add_argument(
+        '--recommend',
+        metavar='GAME',
+        help='Recommend best Proton version for a game based on ProtonDB reports'
     )
 
     return parser.parse_args()
@@ -2698,6 +2905,154 @@ def main() -> int:
         except KeyboardInterrupt:
             print(f"\n{Color.YELLOW}Removal cancelled.{Color.END}")
             return 130
+        except Exception as e:
+            print(f"\n{Color.RED}Error: {e}{Color.END}")
+            return 1
+
+    # Handle --check-updates flag
+    if args.check_updates:
+        try:
+            updates = check_ge_proton_updates()
+
+            if args.json:
+                print(json.dumps({"updates": updates}, indent=2))
+            elif updates:
+                print(f"\n{Color.BOLD}GE-Proton Update Status{Color.END}\n")
+
+                for u in updates:
+                    if u['installed']:
+                        if u['update_available']:
+                            print(f"  {Color.YELLOW}⬆{Color.END} {u['installed']} → {Color.GREEN}{u['latest']}{Color.END} (update available)")
+                        else:
+                            print(f"  {Color.GREEN}✓{Color.END} {u['installed']} (up to date)")
+                    else:
+                        print(f"  {Color.CYAN}ℹ{Color.END} No GE-Proton installed. Latest: {Color.GREEN}{u['latest']}{Color.END}")
+
+                any_updates = any(u['update_available'] for u in updates)
+                if any_updates:
+                    print(f"\n  {Color.DIM}Run: steam-proton-helper --update-proton{Color.END}")
+            else:
+                print(f"{Color.RED}Could not check for updates.{Color.END}")
+                return 1
+            return 0
+        except Exception as e:
+            print(f"\n{Color.RED}Error: {e}{Color.END}")
+            return 1
+
+    # Handle --update-proton flag
+    if args.update_proton:
+        try:
+            print(f"\n{Color.BOLD}Checking for GE-Proton updates...{Color.END}")
+            success, message = update_ge_proton(force=args.force)
+            if success:
+                print(f"\n{Color.GREEN}✓ {message}{Color.END}")
+                return 0
+            else:
+                print(f"\n{Color.RED}✗ {message}{Color.END}")
+                return 1
+        except KeyboardInterrupt:
+            print(f"\n{Color.YELLOW}Update cancelled.{Color.END}")
+            return 130
+        except Exception as e:
+            print(f"\n{Color.RED}Error: {e}{Color.END}")
+            return 1
+
+    # Handle --recommend flag
+    if args.recommend:
+        try:
+            game_input = args.recommend
+
+            # Resolve game input
+            app_id, game_name, matches = resolve_game_input(game_input)
+
+            if matches:
+                # Multiple matches
+                if args.json:
+                    print(json.dumps({
+                        "error": "multiple_matches",
+                        "query": game_input,
+                        "matches": [{"appid": m.appid, "name": m.name} for m in matches]
+                    }, indent=2))
+                else:
+                    print(f"\nMultiple games found for '{game_input}':\n")
+                    for i, app in enumerate(matches[:10], 1):
+                        print(f"  {i}. {app.name} (AppID: {app.appid})")
+                    print(f"\nUse --recommend <AppID> for a specific game.")
+                return 1
+
+            if not app_id:
+                if args.json:
+                    print(json.dumps({"error": "game_not_found", "query": game_input}, indent=2))
+                else:
+                    print(f"{Color.RED}Game not found: {game_input}{Color.END}")
+                return 1
+
+            # Fetch reports
+            reports = fetch_protondb_reports(app_id)
+
+            if not reports:
+                if args.json:
+                    print(json.dumps({"error": "no_reports", "app_id": app_id}, indent=2))
+                else:
+                    print(f"{Color.YELLOW}No ProtonDB reports found for this game.{Color.END}")
+                return 1
+
+            # Analyze recommendations
+            recommendations = analyze_proton_recommendations(reports)
+
+            if args.json:
+                output = {
+                    "app_id": app_id,
+                    "game_name": game_name,
+                    "total_reports": len(reports),
+                    "recommendations": [
+                        {
+                            "proton_version": r.proton_version,
+                            "rating": r.rating,
+                            "report_count": r.report_count,
+                            "success_rate": round(r.success_rate, 2),
+                            "is_ge_proton": r.is_ge_proton,
+                        }
+                        for r in recommendations[:10]
+                    ]
+                }
+                print(json.dumps(output, indent=2))
+            else:
+                title = game_name or f"AppID {app_id}"
+                print(f"\n{Color.BOLD}Proton Recommendations for {title}{Color.END}")
+                print("─" * 50)
+                print(f"  Based on {len(reports)} ProtonDB reports\n")
+
+                if not recommendations:
+                    print(f"  {Color.YELLOW}No Proton version data in reports.{Color.END}")
+                    return 0
+
+                # Show top recommendations
+                print(f"  {Color.BOLD}Top Recommended Proton Versions:{Color.END}\n")
+                for i, rec in enumerate(recommendations[:5], 1):
+                    rating_color = get_tier_color(rec.rating)
+                    rating_symbol = get_tier_symbol(rec.rating)
+                    ge_badge = f" {Color.CYAN}[GE]{Color.END}" if rec.is_ge_proton else ""
+
+                    print(f"  {i}. {rec.proton_version}{ge_badge}")
+                    print(f"     {rating_symbol} {rating_color}{rec.rating.upper()}{Color.END} ({rec.report_count} reports, {rec.success_rate*100:.0f}% success)")
+
+                # Best overall recommendation
+                if recommendations:
+                    best = recommendations[0]
+                    print(f"\n  {Color.GREEN}✓ Best choice: {best.proton_version}{Color.END}")
+
+                    # Check if it's installed
+                    steam_root = find_steam_root()
+                    if steam_root:
+                        protons = find_proton_installations(steam_root)
+                        installed_names = [p.name.lower() for p in protons]
+                        if best.proton_version.lower() in installed_names:
+                            print(f"    {Color.DIM}(Already installed){Color.END}")
+                        elif best.is_ge_proton:
+                            print(f"    {Color.DIM}Install with: steam-proton-helper --install-proton {best.proton_version}{Color.END}")
+
+            return 0
         except Exception as e:
             print(f"\n{Color.RED}Error: {e}{Color.END}")
             return 1

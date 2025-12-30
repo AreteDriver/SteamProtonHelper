@@ -18,6 +18,8 @@ complete -c steam-proton-helper -l search -d 'Search Steam for games by name' -r
 complete -c steam-proton-helper -l list-proton -d 'List all detected Proton installations'
 complete -c steam-proton-helper -l install-proton -d 'Install GE-Proton version' -r -a 'list latest'
 complete -c steam-proton-helper -l remove-proton -d 'Remove a custom Proton version' -r -a 'list'
+complete -c steam-proton-helper -l check-updates -d 'Check if newer GE-Proton versions are available'
+complete -c steam-proton-helper -l update-proton -d 'Update to the latest GE-Proton version'
 complete -c steam-proton-helper -l force -d 'Force reinstall if already installed'
 
 # Also complete for the .py script

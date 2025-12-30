@@ -1484,6 +1484,32 @@ class TestArgumentParsing(unittest.TestCase):
             self.assertEqual(args.remove_proton, 'list')
             self.assertTrue(args.json)
 
+    def test_check_updates_flag(self):
+        """Test --check-updates flag"""
+        with patch('sys.argv', ['prog', '--check-updates']):
+            args = parse_args()
+            self.assertTrue(args.check_updates)
+
+    def test_check_updates_with_json(self):
+        """Test --check-updates with --json"""
+        with patch('sys.argv', ['prog', '--check-updates', '--json']):
+            args = parse_args()
+            self.assertTrue(args.check_updates)
+            self.assertTrue(args.json)
+
+    def test_update_proton_flag(self):
+        """Test --update-proton flag"""
+        with patch('sys.argv', ['prog', '--update-proton']):
+            args = parse_args()
+            self.assertTrue(args.update_proton)
+
+    def test_update_proton_with_force(self):
+        """Test --update-proton with --force"""
+        with patch('sys.argv', ['prog', '--update-proton', '--force']):
+            args = parse_args()
+            self.assertTrue(args.update_proton)
+            self.assertTrue(args.force)
+
 
 # =============================================================================
 # Test Fix Script Generation

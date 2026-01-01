@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Steam Proton Helper
+Comment=Configure Linux for Steam gaming with Proton
+Exec=steam-proton-helper-gui
+Icon=steam
+Terminal=false
+Type=Application
+Categories=Game;Utility;
+Keywords=steam;proton;wine;gaming;linux;
+StartupNotify=true

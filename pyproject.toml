@@ -37,12 +37,17 @@ Repository = "https://github.com/AreteDriver/SteamProtonHelper"
 
 [project.scripts]
 steam-proton-helper = "steam_proton_helper:main"
+steam-proton-helper-gui = "steam_proton_helper_gui:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-timeout>=2.0"]
+gui = ["PyQt6>=6.4.0"]
 
 [tool.setuptools]
-py-modules = ["steam_proton_helper"]
+py-modules = ["steam_proton_helper", "steam_proton_helper_gui"]
+
+[tool.setuptools.packages.find]
+include = ["gui*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test_steam_proton_helper.py"]

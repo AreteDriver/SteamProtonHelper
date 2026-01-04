@@ -56,17 +56,23 @@ SteamProtonHelper serves as your **first-line diagnostic and setup assistant** f
 
 ### Installation
 
-#### Option 1: Clone and run directly (Recommended)
+#### Option 1: Install via pip (Recommended)
+```bash
+# CLI only
+pip install steam-proton-helper
+
+# CLI + GUI
+pip install steam-proton-helper[gui]
+
+# Or with pipx (for isolated install)
+pipx install steam-proton-helper
+```
+
+#### Option 2: Clone and run directly
 ```bash
 git clone https://github.com/AreteDriver/SteamProtonHelper.git
 cd SteamProtonHelper
 chmod +x steam_proton_helper.py
-```
-
-#### Option 2: Install via pip
-```bash
-pip install git+https://github.com/AreteDriver/SteamProtonHelper.git
-steam-proton-helper
 ```
 
 #### Option 3: Use the installation script
@@ -74,6 +80,19 @@ steam-proton-helper
 git clone https://github.com/AreteDriver/SteamProtonHelper.git
 cd SteamProtonHelper
 ./install.sh
+```
+
+### GUI
+
+Steam Proton Helper includes a full PyQt6 GUI with three tabs:
+
+- **System Checks**: Visual tree view of all checks with status icons
+- **Proton Management**: Install/update GE-Proton versions
+- **ProtonDB Lookup**: Search game compatibility by name or AppID
+
+```bash
+# Launch GUI
+steam-proton-helper-gui
 ```
 
 ### Basic Usage

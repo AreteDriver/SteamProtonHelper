@@ -2205,6 +2205,60 @@ class TestGetProtonRecommendations(unittest.TestCase):
         result = get_proton_recommendations(info, installed)
         self.assertIsInstance(result, list)
 
+    def test_platinum_tier_recommendations(self):
+        """Test recommendations for platinum tier"""
+        from steam_proton_helper import get_proton_recommendations, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="292030", tier="platinum", confidence="strong",
+            score=0.95, total_reports=1000,
+        )
+        result = get_proton_recommendations(info, ["GE-Proton9-1"])
+        self.assertTrue(len(result) >= 1)
+        # Platinum should recommend Experimental first
+        self.assertIn("Experimental", result[0].proton_version)
+
+    def test_silver_tier_recommendations(self):
+        """Test recommendations for silver tier"""
+        from steam_proton_helper import get_proton_recommendations, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="12345", tier="silver", confidence="moderate",
+            score=0.60, total_reports=50,
+        )
+        result = get_proton_recommendations(info, ["GE-Proton9-1"])
+        self.assertTrue(len(result) >= 1)
+        # Silver should recommend GE-Proton
+        self.assertIn("GE-Proton", result[0].proton_version)
+
+    def test_bronze_tier_recommendations(self):
+        """Test recommendations for bronze tier"""
+        from steam_proton_helper import get_proton_recommendations, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="67890", tier="bronze", confidence="low",
+            score=0.40, total_reports=20,
+        )
+        result = get_proton_recommendations(info, ["GE-Proton9-1"])
+        self.assertTrue(len(result) >= 1)
+
+    def test_borked_tier_recommendations(self):
+        """Test recommendations for borked tier"""
+        from steam_proton_helper import get_proton_recommendations, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="99999", tier="borked", confidence="strong",
+            score=0.10, total_reports=100,
+        )
+        result = get_proton_recommendations(info, ["GE-Proton9-1"])
+        self.assertTrue(len(result) >= 1)
+
+    def test_unknown_tier_recommendations(self):
+        """Test recommendations for unknown/pending tier"""
+        from steam_proton_helper import get_proton_recommendations, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="11111", tier="pending", confidence="none",
+            score=0.0, total_reports=0,
+        )
+        result = get_proton_recommendations(info, [])
+        self.assertTrue(len(result) >= 1)
+
 
 class TestPrintFunctions(unittest.TestCase):
     """Tests for print output functions"""
@@ -2597,6 +2651,481 @@ class TestMainFunction(unittest.TestCase):
     def test_no_color_flag(self, mock_print):
         """Test --no-color flag"""
         from steam_proton_helper import main
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog', '--search', 'witcher'])
+    @patch('steam_proton_helper.search_steam_games')
+    @patch('builtins.print')
+    def test_search_flag(self, mock_print, mock_search):
+        """Test --search flag"""
+        from steam_proton_helper import main, SteamApp
+        mock_search.return_value = [
+            SteamApp(appid=292030, name="The Witcher 3: Wild Hunt"),
+            SteamApp(appid=20920, name="The Witcher 2"),
+        ]
+        result = main()
+        self.assertEqual(result, 0)
+        mock_print.assert_called()
+
+    @patch('sys.argv', ['prog', '--search', 'witcher', '--json'])
+    @patch('steam_proton_helper.search_steam_games')
+    @patch('builtins.print')
+    def test_search_flag_json(self, mock_print, mock_search):
+        """Test --search with --json flag"""
+        from steam_proton_helper import main, SteamApp
+        mock_search.return_value = [
+            SteamApp(appid=292030, name="The Witcher 3"),
+        ]
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog', '--search', 'nonexistent_xyz'])
+    @patch('steam_proton_helper.search_steam_games')
+    @patch('builtins.print')
+    def test_search_no_results(self, mock_print, mock_search):
+        """Test --search with no results"""
+        from steam_proton_helper import main
+        mock_search.return_value = []
+        result = main()
+        self.assertEqual(result, 1)
+
+    @patch('sys.argv', ['prog', '--list-proton'])
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('builtins.print')
+    def test_list_proton_no_steam(self, mock_print, mock_find):
+        """Test --list-proton when Steam not found"""
+        from steam_proton_helper import main
+        mock_find.return_value = None
+        result = main()
+        self.assertEqual(result, 1)
+
+    @patch('sys.argv', ['prog', '--list-proton'])
+    @patch('steam_proton_helper.find_proton_installations')
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('builtins.print')
+    def test_list_proton_with_installations(self, mock_print, mock_find_root, mock_find_proton):
+        """Test --list-proton with Proton installations"""
+        from steam_proton_helper import main, ProtonInstall
+        mock_find_root.return_value = "/home/user/.steam/root"
+        mock_find_proton.return_value = [
+            ProtonInstall("GE-Proton9-1", "/path/compatibilitytools.d/GE-Proton9-1", True, True, True),
+            ProtonInstall("Proton 8.0", "/path/common/Proton 8.0", True, True, True),
+        ]
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog', '--list-proton', '--json'])
+    @patch('steam_proton_helper.find_proton_installations')
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('builtins.print')
+    def test_list_proton_json(self, mock_print, mock_find_root, mock_find_proton):
+        """Test --list-proton with --json flag"""
+        from steam_proton_helper import main, ProtonInstall
+        mock_find_root.return_value = "/home/user/.steam/root"
+        mock_find_proton.return_value = [
+            ProtonInstall("GE-Proton9-1", "/path/compatibilitytools.d/GE-Proton9-1", True, True, True),
+        ]
+        result = main()
+        self.assertEqual(result, 0)
+
+
+class TestVDFParserEdgeCases(unittest.TestCase):
+    """Tests for VDF parser edge cases"""
+
+    def test_parse_permission_error(self):
+        """Test VDF parse with permission error"""
+        from steam_proton_helper import parse_libraryfolders_vdf
+        with patch('builtins.open', side_effect=PermissionError("Access denied")):
+            result = parse_libraryfolders_vdf("/etc/shadow")
+            self.assertEqual(result, [])
+
+    def test_parse_generic_exception(self):
+        """Test VDF parse with generic exception"""
+        from steam_proton_helper import parse_libraryfolders_vdf
+        with patch('builtins.open', side_effect=Exception("Unknown error")):
+            result = parse_libraryfolders_vdf("/some/path")
+            self.assertEqual(result, [])
+
+
+class TestDistroDetectorEdgeCases(unittest.TestCase):
+    """Tests for DistroDetector edge cases"""
+
+    def test_detect_fedora(self):
+        """Test detecting Fedora"""
+        from steam_proton_helper import DistroDetector
+        os_release = 'ID=fedora\nPRETTY_NAME="Fedora Linux 39"\n'
+        with patch('builtins.open', MagicMock(return_value=MagicMock(
+            __enter__=lambda s: MagicMock(read=lambda: os_release, __iter__=lambda s: iter(os_release.split('\n'))),
+            __exit__=lambda s, *a: None
+        ))):
+            with patch('os.path.exists', return_value=True):
+                distro, pm = DistroDetector.detect_distro()
+                # Should detect dnf for Fedora
+                self.assertIn(pm, ['dnf', 'apt', 'pacman', 'zypper', 'unknown'])
+
+    def test_detect_arch(self):
+        """Test detecting Arch Linux"""
+        from steam_proton_helper import DistroDetector
+        os_release = 'ID=arch\nPRETTY_NAME="Arch Linux"\n'
+        m = MagicMock()
+        m.__enter__ = lambda s: m
+        m.__exit__ = lambda s, *a: None
+        m.__iter__ = lambda s: iter(os_release.split('\n'))
+        with patch('builtins.open', return_value=m):
+            with patch('os.path.exists', return_value=True):
+                distro, pm = DistroDetector.detect_distro()
+                self.assertIn(pm, ['pacman', 'apt', 'dnf', 'zypper', 'unknown'])
+
+    def test_detect_opensuse(self):
+        """Test detecting openSUSE"""
+        from steam_proton_helper import DistroDetector
+        os_release = 'ID=opensuse-tumbleweed\nPRETTY_NAME="openSUSE Tumbleweed"\n'
+        m = MagicMock()
+        m.__enter__ = lambda s: m
+        m.__exit__ = lambda s, *a: None
+        m.__iter__ = lambda s: iter(os_release.split('\n'))
+        with patch('builtins.open', return_value=m):
+            with patch('os.path.exists', return_value=True):
+                distro, pm = DistroDetector.detect_distro()
+                self.assertIn(pm, ['zypper', 'apt', 'dnf', 'pacman', 'unknown'])
+
+    def test_detect_fallback_to_package_manager(self):
+        """Test fallback to package manager detection"""
+        from steam_proton_helper import DistroDetector
+        with patch('os.path.exists', return_value=False):
+            with patch('shutil.which', side_effect=lambda x: '/usr/bin/pacman' if x == 'pacman' else None):
+                distro, pm = DistroDetector.detect_distro()
+                self.assertEqual(pm, 'pacman')
+
+
+class TestDependencyCheckerPackageManagers(unittest.TestCase):
+    """Tests for DependencyChecker with different package managers"""
+
+    def test_check_package_installed_dnf(self):
+        """Test package check with DNF"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Fedora", "dnf")
+        with patch.object(checker, 'run_command', return_value=(0, '', '')):
+            result = checker.check_package_installed('some-package')
+            self.assertTrue(result)
+
+    def test_check_package_installed_pacman(self):
+        """Test package check with Pacman"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Arch Linux", "pacman")
+        with patch.object(checker, 'run_command', return_value=(0, '', '')):
+            result = checker.check_package_installed('some-package')
+            self.assertTrue(result)
+
+    def test_check_package_installed_zypper(self):
+        """Test package check with Zypper"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("openSUSE", "zypper")
+        with patch.object(checker, 'run_command', return_value=(0, '', '')):
+            result = checker.check_package_installed('some-package')
+            self.assertTrue(result)
+
+    def test_check_package_installed_unknown(self):
+        """Test package check with unknown package manager"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Unknown", "unknown")
+        result = checker.check_package_installed('some-package')
+        self.assertFalse(result)
+
+    def test_check_multilib_dnf(self):
+        """Test multilib check with DNF"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Fedora", "dnf")
+        enabled, msg = checker.check_multilib_enabled()
+        self.assertTrue(enabled)
+        self.assertIn("automatically", msg.lower())
+
+    def test_check_multilib_unknown(self):
+        """Test multilib check with unknown package manager"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Unknown", "unknown_pm")
+        enabled, msg = checker.check_multilib_enabled()
+        self.assertTrue(enabled)  # Assumes available
+
+    def test_check_multilib_pacman_enabled(self):
+        """Test multilib check with pacman - multilib enabled"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Arch", "pacman")
+        pacman_content = """
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[multilib]
+Include = /etc/pacman.d/mirrorlist
+"""
+        with patch('builtins.open', unittest.mock.mock_open(read_data=pacman_content)):
+            enabled, msg = checker.check_multilib_enabled()
+            self.assertTrue(enabled)
+            self.assertIn("multilib", msg.lower())
+
+    def test_check_multilib_pacman_disabled(self):
+        """Test multilib check with pacman - multilib not present"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Arch", "pacman")
+        pacman_content = """
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+"""
+        with patch('builtins.open', unittest.mock.mock_open(read_data=pacman_content)):
+            enabled, msg = checker.check_multilib_enabled()
+            self.assertFalse(enabled)
+            self.assertIn("not enabled", msg.lower())
+
+    def test_check_multilib_pacman_error(self):
+        """Test multilib check with pacman - file read error"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Arch", "pacman")
+        with patch('builtins.open', side_effect=Exception("Cannot read file")):
+            enabled, msg = checker.check_multilib_enabled()
+            self.assertFalse(enabled)
+            self.assertIn("could not read", msg.lower())
+
+
+class TestGraphicsChecks(unittest.TestCase):
+    """Tests for graphics/GPU checking functions"""
+
+    def test_vulkan_not_installed(self):
+        """Test vulkan check when vulkaninfo not installed"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Ubuntu", "apt")
+        with patch.object(checker, 'check_command_exists', return_value=False):
+            checks = checker.check_graphics()
+            vulkan_check = next((c for c in checks if c.name == "Vulkan Tools"), None)
+            self.assertIsNotNone(vulkan_check)
+            self.assertEqual(vulkan_check.status, CheckStatus.FAIL)
+
+    def test_vulkan_fails(self):
+        """Test vulkan check when vulkaninfo returns error"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Ubuntu", "apt")
+        with patch.object(checker, 'check_command_exists', return_value=True):
+            with patch.object(checker, 'run_command', return_value=(1, '', 'Vulkan error')):
+                checks = checker.check_graphics()
+                vulkan_check = next((c for c in checks if c.name == "Vulkan Support"), None)
+                self.assertIsNotNone(vulkan_check)
+                self.assertEqual(vulkan_check.status, CheckStatus.FAIL)
+
+    def test_glxinfo_not_installed(self):
+        """Test glxinfo check when not installed"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Ubuntu", "apt")
+        # Mock vulkaninfo exists but glxinfo doesn't
+        def side_effect(cmd):
+            if cmd == 'vulkaninfo':
+                return True
+            return False
+        with patch.object(checker, 'check_command_exists', side_effect=side_effect):
+            with patch.object(checker, 'run_command', return_value=(0, 'GPU info', '')):
+                checks = checker.check_graphics()
+                mesa_check = next((c for c in checks if c.name == "Mesa/OpenGL"), None)
+                self.assertIsNotNone(mesa_check)
+                self.assertEqual(mesa_check.status, CheckStatus.WARNING)
+
+    def test_glxinfo_fails(self):
+        """Test glxinfo check when it returns error"""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker("Ubuntu", "apt")
+        with patch.object(checker, 'check_command_exists', return_value=True):
+            def run_side_effect(cmd):
+                if 'vulkaninfo' in cmd:
+                    return (0, 'Vulkan works', '')
+                return (1, '', 'GLX error')
+            with patch.object(checker, 'run_command', side_effect=run_side_effect):
+                checks = checker.check_graphics()
+                mesa_check = next((c for c in checks if c.name == "Mesa/OpenGL"), None)
+                self.assertIsNotNone(mesa_check)
+                self.assertEqual(mesa_check.status, CheckStatus.WARNING)
+
+
+class TestInstallProtonBranches(unittest.TestCase):
+    """Tests for --install-proton CLI branches"""
+
+    @patch('sys.argv', ['prog', '--install-proton', 'list', '--json'])
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('builtins.print')
+    def test_install_proton_list_json(self, mock_print, mock_fetch):
+        """Test --install-proton list with JSON output"""
+        from steam_proton_helper import main, GEProtonRelease
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="https://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        result = main()
+        self.assertEqual(result, 0)
+        # Check JSON was printed
+        printed_json = mock_print.call_args_list[-1][0][0]
+        self.assertIn("releases", printed_json)
+
+    @patch('sys.argv', ['prog', '--install-proton', 'list'])
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('builtins.print')
+    def test_install_proton_list_empty(self, mock_print, mock_fetch):
+        """Test --install-proton list when no releases available"""
+        from steam_proton_helper import main
+        mock_fetch.return_value = []
+        result = main()
+        self.assertEqual(result, 1)  # Should fail
+
+    @patch('sys.argv', ['prog', '--install-proton', 'GE-Proton9-1'])
+    @patch('steam_proton_helper.install_ge_proton')
+    @patch('builtins.print')
+    def test_install_proton_success(self, mock_print, mock_install):
+        """Test successful proton installation"""
+        from steam_proton_helper import main
+        mock_install.return_value = (True, "GE-Proton9-1 installed successfully")
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog', '--install-proton', 'GE-Proton9-1'])
+    @patch('steam_proton_helper.install_ge_proton')
+    @patch('builtins.print')
+    def test_install_proton_failure(self, mock_print, mock_install):
+        """Test failed proton installation"""
+        from steam_proton_helper import main
+        mock_install.return_value = (False, "Installation failed")
+        result = main()
+        self.assertEqual(result, 1)
+
+    @patch('sys.argv', ['prog', '--install-proton', 'GE-Proton9-1'])
+    @patch('steam_proton_helper.install_ge_proton')
+    @patch('builtins.print')
+    def test_install_proton_exception(self, mock_print, mock_install):
+        """Test proton installation with exception"""
+        from steam_proton_helper import main
+        mock_install.side_effect = Exception("Network error")
+        result = main()
+        self.assertEqual(result, 1)
+
+
+class TestRemoveProtonBranches(unittest.TestCase):
+    """Tests for --remove-proton CLI branches"""
+
+    @patch('sys.argv', ['prog', '--remove-proton', 'list', '--json'])
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    @patch('builtins.print')
+    def test_remove_proton_list_json(self, mock_print, mock_removable):
+        """Test --remove-proton list with JSON output"""
+        from steam_proton_helper import main
+        mock_removable.return_value = [
+            ("GE-Proton9-1", "/path/to/ge-proton"),
+            ("GE-Proton8-25", "/path/to/ge-proton-old"),
+        ]
+        result = main()
+        self.assertEqual(result, 0)
+        printed_json = mock_print.call_args_list[-1][0][0]
+        self.assertIn("removable", printed_json)
+
+    @patch('sys.argv', ['prog', '--remove-proton', 'list'])
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    @patch('builtins.print')
+    def test_remove_proton_list_empty(self, mock_print, mock_removable):
+        """Test --remove-proton list when nothing to remove"""
+        from steam_proton_helper import main
+        mock_removable.return_value = []
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog', '--remove-proton', 'GE-Proton9-1', '--force'])
+    @patch('steam_proton_helper.remove_ge_proton')
+    @patch('builtins.print')
+    def test_remove_proton_force(self, mock_print, mock_remove):
+        """Test forced proton removal"""
+        from steam_proton_helper import main
+        mock_remove.return_value = (True, "Removed successfully")
+        result = main()
+        self.assertEqual(result, 0)
+
+
+class TestSteamLibraryBranches(unittest.TestCase):
+    """Tests for Steam library detection branches"""
+
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.get_library_paths')
+    def test_check_steam_multiple_libraries(self, mock_libs, mock_root):
+        """Test Steam check with multiple library folders"""
+        from steam_proton_helper import DependencyChecker
+        mock_root.return_value = "/home/user/.steam/steam"
+        mock_libs.return_value = [
+            "/home/user/.steam/steam",
+            "/media/games/SteamLibrary"
+        ]
+        checker = DependencyChecker("Ubuntu", "apt")
+        with patch.object(checker, 'run_command', return_value=(0, '', '')):
+            checks = checker.check_steam()
+            lib_check = next((c for c in checks if c.name == "Steam Libraries"), None)
+            self.assertIsNotNone(lib_check)
+            self.assertEqual(lib_check.status, CheckStatus.PASS)
+            self.assertIn("2", lib_check.message)
+
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.detect_steam_variant')
+    def test_check_steam_no_root(self, mock_variant, mock_root):
+        """Test Steam check when root not found but variant exists"""
+        from steam_proton_helper import DependencyChecker, SteamVariant
+        mock_root.return_value = None
+        mock_variant.return_value = (SteamVariant.NATIVE, "Native Steam")
+        checker = DependencyChecker("Ubuntu", "apt")
+        with patch.object(checker, 'run_command', return_value=(0, '', '')):
+            checks = checker.check_steam()
+            root_check = next((c for c in checks if c.name == "Steam Root"), None)
+            self.assertIsNotNone(root_check)
+            self.assertEqual(root_check.status, CheckStatus.WARNING)
+
+
+class TestListProtonVerbose(unittest.TestCase):
+    """Tests for --list-proton verbose output branches"""
+
+    @patch('sys.argv', ['prog', '--list-proton', '--verbose'])
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.find_proton_installations')
+    @patch('builtins.print')
+    def test_list_proton_verbose(self, mock_print, mock_installs, mock_root):
+        """Test --list-proton with verbose output shows full paths"""
+        from steam_proton_helper import main, ProtonInstall
+        mock_root.return_value = "/home/user/.steam/steam"
+        mock_installs.return_value = [
+            ProtonInstall(
+                name="GE-Proton9-1",
+                path="/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1",
+                has_executable=True,
+                has_toolmanifest=True,
+                has_version=True
+            )
+        ]
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog', '--list-proton'])
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.find_proton_installations')
+    @patch('builtins.print')
+    def test_list_proton_no_verbose(self, mock_print, mock_installs, mock_root):
+        """Test --list-proton without verbose hides full paths"""
+        from steam_proton_helper import main, ProtonInstall
+        mock_root.return_value = "/home/user/.steam/steam"
+        mock_installs.return_value = [
+            ProtonInstall(
+                name="GE-Proton9-1",
+                path="/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1",
+                has_executable=True,
+                has_toolmanifest=True,
+                has_version=True
+            )
+        ]
         result = main()
         self.assertEqual(result, 0)
 

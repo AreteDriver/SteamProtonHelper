@@ -3536,5 +3536,360 @@ class TestRemoveProtonListText(unittest.TestCase):
         self.assertEqual(result, 0)
 
 
+class TestDownloadWithProgressUrllib(unittest.TestCase):
+    """Tests for download_with_progress urllib branches"""
+
+    @patch('urllib.request.urlopen')
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
+    @patch('builtins.print')
+    def test_download_success_with_progress(self, mock_print, mock_open, mock_urlopen):
+        """Test successful download with progress display"""
+        from steam_proton_helper import download_with_progress
+        mock_response = MagicMock()
+        mock_response.headers.get.return_value = '1024'
+        mock_response.read.side_effect = [b'x' * 512, b'x' * 512, b'']
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+        result = download_with_progress('http://example.com/file.tar.gz', '/tmp/file.tar.gz')
+        self.assertTrue(result)
+
+    @patch('urllib.request.urlopen')
+    def test_download_network_error(self, mock_urlopen):
+        """Test download with network error"""
+        from steam_proton_helper import download_with_progress
+        import urllib.error
+        mock_urlopen.side_effect = urllib.error.URLError("Network error")
+        result = download_with_progress('http://example.com/file.tar.gz', '/tmp/file.tar.gz')
+        self.assertFalse(result)
+
+
+class TestInstallGEProtonBranches(unittest.TestCase):
+    """Tests for install_ge_proton function branches"""
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    def test_install_no_releases(self, mock_fetch, mock_dir):
+        """Test install when no releases available"""
+        from steam_proton_helper import install_ge_proton
+        mock_dir.return_value = '/path/to/install'
+        mock_fetch.return_value = []
+        success, msg = install_ge_proton('latest')
+        self.assertFalse(success)
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('os.path.exists')
+    def test_install_already_exists_no_force(self, mock_exists, mock_fetch, mock_dir):
+        """Test install when version already exists without force"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        mock_dir.return_value = '/path/to/install'
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        mock_exists.return_value = True
+        success, msg = install_ge_proton('latest')
+        self.assertFalse(success)
+        self.assertIn("already installed", msg)
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('os.path.exists')
+    @patch('shutil.rmtree')
+    @patch('steam_proton_helper.download_with_progress')
+    @patch('builtins.print')
+    def test_install_force_reinstall(self, mock_print, mock_download, mock_rmtree, mock_exists, mock_fetch, mock_dir):
+        """Test force reinstall removes existing"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        mock_dir.return_value = '/path/to/install'
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        mock_exists.return_value = True
+        mock_download.return_value = False  # Download fails
+        success, msg = install_ge_proton('latest', force=True)
+        self.assertFalse(success)
+        mock_rmtree.assert_called()
+
+
+class TestRemoveGEProtonBranches(unittest.TestCase):
+    """Tests for remove_ge_proton function branches"""
+
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    @patch('builtins.input', return_value='y')
+    @patch('shutil.rmtree')
+    @patch('builtins.print')
+    def test_remove_success(self, mock_print, mock_rmtree, mock_input, mock_removable):
+        """Test successful removal"""
+        from steam_proton_helper import remove_ge_proton
+        mock_removable.return_value = [
+            ("GE-Proton9-1", "/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1"),
+        ]
+        success, msg = remove_ge_proton("GE-Proton9-1")
+        self.assertTrue(success)
+
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    def test_remove_not_custom_proton(self, mock_removable):
+        """Test cannot remove non-custom Proton"""
+        from steam_proton_helper import remove_ge_proton
+        mock_removable.return_value = [
+            ("Proton 8.0", "/home/user/.steam/steam/steamapps/common/Proton 8.0"),
+        ]
+        success, msg = remove_ge_proton("Proton 8.0")
+        self.assertFalse(success)
+        self.assertIn("not a custom Proton", msg)
+
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    @patch('builtins.input', side_effect=KeyboardInterrupt)
+    @patch('builtins.print')
+    def test_remove_keyboard_interrupt(self, mock_print, mock_input, mock_removable):
+        """Test removal cancelled with keyboard interrupt"""
+        from steam_proton_helper import remove_ge_proton
+        mock_removable.return_value = [
+            ("GE-Proton9-1", "/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1"),
+        ]
+        success, msg = remove_ge_proton("GE-Proton9-1")
+        self.assertFalse(success)
+        self.assertIn("cancelled", msg)
+
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    @patch('shutil.rmtree', side_effect=PermissionError)
+    @patch('builtins.print')
+    def test_remove_permission_error(self, mock_print, mock_rmtree, mock_removable):
+        """Test removal with permission error"""
+        from steam_proton_helper import remove_ge_proton
+        mock_removable.return_value = [
+            ("GE-Proton9-1", "/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1"),
+        ]
+        success, msg = remove_ge_proton("GE-Proton9-1", confirm=False)
+        self.assertFalse(success)
+        self.assertIn("Permission denied", msg)
+
+
+class TestCheckGEProtonUpdatesBranches(unittest.TestCase):
+    """Tests for check_ge_proton_updates function branches"""
+
+    @patch('steam_proton_helper.find_steam_root')
+    def test_check_updates_no_steam(self, mock_root):
+        """Test check updates when Steam not found"""
+        from steam_proton_helper import check_ge_proton_updates
+        mock_root.return_value = None
+        result = check_ge_proton_updates()
+        self.assertEqual(result, [])
+
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.find_proton_installations')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    def test_check_updates_with_installed(self, mock_fetch, mock_installs, mock_root):
+        """Test check updates with installed GE-Proton"""
+        from steam_proton_helper import check_ge_proton_updates, ProtonInstall, GEProtonRelease
+        mock_root.return_value = "/home/user/.steam/steam"
+        mock_installs.return_value = [
+            ProtonInstall(
+                name="GE-Proton9-1",
+                path="/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1",
+                has_executable=True,
+                has_toolmanifest=True,
+                has_version=True
+            )
+        ]
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-2",
+                name="GE-Proton9-2",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        result = check_ge_proton_updates()
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0]['update_available'])
+
+
+class TestMainFunctionBranches(unittest.TestCase):
+    """Tests for main() function branches"""
+
+    @patch('sys.argv', ['prog', '--fix', '/tmp/fix.sh'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro')
+    @patch('steam_proton_helper.DependencyChecker')
+    @patch('steam_proton_helper.output_fix_script')
+    def test_main_fix_flag(self, mock_output, mock_checker, mock_distro):
+        """Test main with --fix flag"""
+        from steam_proton_helper import main
+        mock_distro.return_value = ("Ubuntu", "apt")
+        mock_checker_instance = MagicMock()
+        mock_checker_instance.run_all_checks.return_value = []
+        mock_checker.return_value = mock_checker_instance
+        result = main()
+        mock_output.assert_called_once()
+
+    @patch('sys.argv', ['prog', '--dry-run'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro')
+    @patch('steam_proton_helper.DependencyChecker')
+    @patch('steam_proton_helper.show_dry_run')
+    @patch('steam_proton_helper.print_header')
+    def test_main_dry_run_flag(self, mock_header, mock_dry_run, mock_checker, mock_distro):
+        """Test main with --dry-run flag"""
+        from steam_proton_helper import main
+        mock_distro.return_value = ("Ubuntu", "apt")
+        mock_checker_instance = MagicMock()
+        mock_checker_instance.run_all_checks.return_value = []
+        mock_checker.return_value = mock_checker_instance
+        result = main()
+        mock_dry_run.assert_called_once()
+
+    @patch('sys.argv', ['prog', '--apply', '--yes'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro')
+    @patch('steam_proton_helper.DependencyChecker')
+    @patch('steam_proton_helper.apply_fixes')
+    @patch('steam_proton_helper.print_header')
+    @patch('builtins.print')
+    def test_main_apply_flag(self, mock_print, mock_header, mock_apply, mock_checker, mock_distro):
+        """Test main with --apply flag"""
+        from steam_proton_helper import main
+        mock_distro.return_value = ("Ubuntu", "apt")
+        mock_checker_instance = MagicMock()
+        mock_checker_instance.run_all_checks.return_value = []
+        mock_checker.return_value = mock_checker_instance
+        mock_apply.return_value = (True, "All fixed!")
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog', '--apply'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro')
+    @patch('steam_proton_helper.DependencyChecker')
+    @patch('steam_proton_helper.apply_fixes')
+    @patch('steam_proton_helper.print_header')
+    @patch('builtins.print')
+    def test_main_apply_failure(self, mock_print, mock_header, mock_apply, mock_checker, mock_distro):
+        """Test main with --apply that fails"""
+        from steam_proton_helper import main
+        mock_distro.return_value = ("Ubuntu", "apt")
+        mock_checker_instance = MagicMock()
+        mock_checker_instance.run_all_checks.return_value = []
+        mock_checker.return_value = mock_checker_instance
+        mock_apply.return_value = (False, "Failed to install")
+        result = main()
+        self.assertEqual(result, 1)
+
+    @patch('sys.argv', ['prog'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro')
+    @patch('steam_proton_helper.DependencyChecker')
+    @patch('steam_proton_helper.print_header')
+    @patch('steam_proton_helper.print_checks_by_category')
+    @patch('steam_proton_helper.print_summary')
+    @patch('steam_proton_helper.print_tips')
+    def test_main_default_run(self, mock_tips, mock_summary, mock_checks, mock_header, mock_checker, mock_distro):
+        """Test main with default run (no flags)"""
+        from steam_proton_helper import main
+        mock_distro.return_value = ("Ubuntu", "apt")
+        mock_checker_instance = MagicMock()
+        mock_checker_instance.run_all_checks.return_value = []
+        mock_checker.return_value = mock_checker_instance
+        result = main()
+        self.assertEqual(result, 0)
+
+    @patch('sys.argv', ['prog'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro', side_effect=KeyboardInterrupt)
+    @patch('builtins.print')
+    def test_main_keyboard_interrupt(self, mock_print, mock_distro):
+        """Test main with keyboard interrupt"""
+        from steam_proton_helper import main
+        result = main()
+        self.assertEqual(result, 130)
+
+    @patch('sys.argv', ['prog', '--json'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro', side_effect=Exception("Test error"))
+    @patch('builtins.print')
+    def test_main_exception_json(self, mock_print, mock_distro):
+        """Test main with exception and JSON output"""
+        from steam_proton_helper import main
+        result = main()
+        self.assertEqual(result, 1)
+
+    @patch('sys.argv', ['prog', '--verbose'])
+    @patch('steam_proton_helper.DistroDetector.detect_distro', side_effect=Exception("Test error"))
+    @patch('builtins.print')
+    def test_main_exception_verbose(self, mock_print, mock_distro):
+        """Test main with exception and verbose output"""
+        from steam_proton_helper import main
+        result = main()
+        self.assertEqual(result, 1)
+
+
+class TestShowDryRun(unittest.TestCase):
+    """Tests for show_dry_run function"""
+
+    @patch('builtins.print')
+    def test_show_dry_run_with_fixes(self, mock_print):
+        """Test show_dry_run with fixes available"""
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck(name="test-pkg", status=CheckStatus.FAIL, message="fail",
+                          category="test", fix_command="sudo apt install test-pkg")
+        ]
+        show_dry_run(checks, "apt")
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_show_dry_run_no_fixes(self, mock_print):
+        """Test show_dry_run with no fixes needed"""
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck(name="test-pkg", status=CheckStatus.PASS, message="ok",
+                          category="test")
+        ]
+        show_dry_run(checks, "apt")
+        mock_print.assert_called()
+
+
+class TestUpdateGEProtonBranches(unittest.TestCase):
+    """Tests for update_ge_proton function branches"""
+
+    @patch('steam_proton_helper.check_ge_proton_updates')
+    def test_update_already_up_to_date(self, mock_check):
+        """Test update when already at latest version (returns True, 'Already up to date')"""
+        from steam_proton_helper import update_ge_proton
+        mock_check.return_value = [
+            {'installed': 'GE-Proton9-2', 'latest': 'GE-Proton9-2', 'update_available': False}
+        ]
+        success, msg = update_ge_proton()
+        self.assertTrue(success)  # Returns True when already up to date
+        self.assertIn("Already up to date", msg)
+
+    @patch('steam_proton_helper.check_ge_proton_updates')
+    def test_update_check_fails(self, mock_check):
+        """Test update when check fails"""
+        from steam_proton_helper import update_ge_proton
+        mock_check.return_value = []
+        success, msg = update_ge_proton()
+        self.assertFalse(success)
+
+    @patch('steam_proton_helper.check_ge_proton_updates')
+    @patch('steam_proton_helper.install_ge_proton')
+    def test_update_with_available_update(self, mock_install, mock_check):
+        """Test update when update is available"""
+        from steam_proton_helper import update_ge_proton
+        mock_check.return_value = [
+            {'installed': 'GE-Proton9-1', 'latest': 'GE-Proton9-2', 'update_available': True}
+        ]
+        mock_install.return_value = (True, "Updated successfully")
+        success, msg = update_ge_proton()
+        self.assertTrue(success)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

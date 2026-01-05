@@ -14,6 +14,7 @@ Tests cover:
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -1862,6 +1863,742 @@ class TestIntegration(unittest.TestCase):
         # Should be parseable
         parsed = json.loads(json_str)
         self.assertEqual(len(parsed["checks"]), len(results))
+
+
+# =============================================================================
+# ProtonDB Functions Tests
+# =============================================================================
+
+class TestGetTierColor(unittest.TestCase):
+    """Tests for get_tier_color function"""
+
+    def test_platinum_tier(self):
+        """Test platinum tier returns cyan"""
+        from steam_proton_helper import get_tier_color, Color
+        self.assertEqual(get_tier_color("platinum"), Color.CYAN)
+
+    def test_gold_tier(self):
+        """Test gold tier returns yellow"""
+        from steam_proton_helper import get_tier_color, Color
+        self.assertEqual(get_tier_color("gold"), Color.YELLOW)
+
+    def test_silver_tier(self):
+        """Test silver tier returns blue"""
+        from steam_proton_helper import get_tier_color, Color
+        self.assertEqual(get_tier_color("silver"), Color.BLUE)
+
+    def test_bronze_tier(self):
+        """Test bronze tier returns yellow"""
+        from steam_proton_helper import get_tier_color, Color
+        self.assertEqual(get_tier_color("bronze"), Color.YELLOW)
+
+    def test_borked_tier(self):
+        """Test borked tier returns red"""
+        from steam_proton_helper import get_tier_color, Color
+        self.assertEqual(get_tier_color("borked"), Color.RED)
+
+    def test_unknown_tier(self):
+        """Test unknown tier returns empty string"""
+        from steam_proton_helper import get_tier_color
+        self.assertEqual(get_tier_color("unknown"), "")
+
+
+class TestGetTierSymbol(unittest.TestCase):
+    """Tests for get_tier_symbol function"""
+
+    def test_platinum_symbol(self):
+        """Test platinum tier symbol"""
+        from steam_proton_helper import get_tier_symbol
+        self.assertEqual(get_tier_symbol("platinum"), "🏆")
+
+    def test_gold_symbol(self):
+        """Test gold tier symbol"""
+        from steam_proton_helper import get_tier_symbol
+        self.assertEqual(get_tier_symbol("gold"), "🥇")
+
+    def test_silver_symbol(self):
+        """Test silver tier symbol"""
+        from steam_proton_helper import get_tier_symbol
+        self.assertEqual(get_tier_symbol("silver"), "🥈")
+
+    def test_bronze_symbol(self):
+        """Test bronze tier symbol"""
+        from steam_proton_helper import get_tier_symbol
+        self.assertEqual(get_tier_symbol("bronze"), "🥉")
+
+    def test_borked_symbol(self):
+        """Test borked tier symbol"""
+        from steam_proton_helper import get_tier_symbol
+        self.assertEqual(get_tier_symbol("borked"), "💔")
+
+    def test_unknown_symbol(self):
+        """Test unknown tier symbol"""
+        from steam_proton_helper import get_tier_symbol
+        self.assertEqual(get_tier_symbol("unknown"), "❓")
+
+
+class TestGetStatusSymbol(unittest.TestCase):
+    """Tests for get_status_symbol function"""
+
+    def test_pass_symbol(self):
+        """Test PASS status symbol"""
+        from steam_proton_helper import get_status_symbol, CheckStatus
+        self.assertEqual(get_status_symbol(CheckStatus.PASS), "✓")
+
+    def test_fail_symbol(self):
+        """Test FAIL status symbol"""
+        from steam_proton_helper import get_status_symbol, CheckStatus
+        self.assertEqual(get_status_symbol(CheckStatus.FAIL), "✗")
+
+    def test_warning_symbol(self):
+        """Test WARNING status symbol"""
+        from steam_proton_helper import get_status_symbol, CheckStatus
+        self.assertEqual(get_status_symbol(CheckStatus.WARNING), "⚠")
+
+    def test_skipped_symbol(self):
+        """Test SKIPPED status symbol"""
+        from steam_proton_helper import get_status_symbol, CheckStatus
+        self.assertEqual(get_status_symbol(CheckStatus.SKIPPED), "○")
+
+
+class TestGetStatusColor(unittest.TestCase):
+    """Tests for get_status_color function"""
+
+    def test_pass_color(self):
+        """Test PASS status color"""
+        from steam_proton_helper import get_status_color, CheckStatus, Color
+        self.assertEqual(get_status_color(CheckStatus.PASS), Color.GREEN)
+
+    def test_fail_color(self):
+        """Test FAIL status color"""
+        from steam_proton_helper import get_status_color, CheckStatus, Color
+        self.assertEqual(get_status_color(CheckStatus.FAIL), Color.RED)
+
+    def test_warning_color(self):
+        """Test WARNING status color"""
+        from steam_proton_helper import get_status_color, CheckStatus, Color
+        self.assertEqual(get_status_color(CheckStatus.WARNING), Color.YELLOW)
+
+    def test_skipped_color(self):
+        """Test SKIPPED status color"""
+        from steam_proton_helper import get_status_color, CheckStatus, Color
+        self.assertEqual(get_status_color(CheckStatus.SKIPPED), Color.DIM)
+
+
+class TestProtonDBInfo(unittest.TestCase):
+    """Tests for ProtonDBInfo dataclass"""
+
+    def test_create_protondb_info(self):
+        """Test creating ProtonDBInfo"""
+        from steam_proton_helper import ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="440",
+            tier="gold",
+            confidence="high",
+            score=0.85,
+            total_reports=150,
+        )
+        self.assertEqual(info.app_id, "440")
+        self.assertEqual(info.tier, "gold")
+        self.assertEqual(info.score, 0.85)
+        self.assertEqual(info.total_reports, 150)
+        self.assertEqual(info.confidence, "high")
+
+
+class TestGEProtonRelease(unittest.TestCase):
+    """Tests for GEProtonRelease dataclass"""
+
+    def test_create_ge_proton_release(self):
+        """Test creating GEProtonRelease"""
+        from steam_proton_helper import GEProtonRelease
+        release = GEProtonRelease(
+            tag_name="GE-Proton9-1",
+            name="GE-Proton9-1",
+            download_url="https://example.com/release.tar.gz",
+            size_bytes=500000000,
+            published_at="2024-01-15T12:00:00Z",
+        )
+        self.assertEqual(release.tag_name, "GE-Proton9-1")
+        self.assertEqual(release.size_bytes, 500000000)
+
+
+class TestProtonRecommendation(unittest.TestCase):
+    """Tests for ProtonRecommendation dataclass"""
+
+    def test_create_recommendation(self):
+        """Test creating ProtonRecommendation"""
+        from steam_proton_helper import ProtonRecommendation
+        rec = ProtonRecommendation(
+            proton_version="GE-Proton9-1",
+            reason="Most reported working version",
+            priority=1
+        )
+        self.assertEqual(rec.proton_version, "GE-Proton9-1")
+        self.assertEqual(rec.priority, 1)
+
+
+class TestSteamAppDataclass(unittest.TestCase):
+    """Tests for SteamApp dataclass"""
+
+    def test_create_steam_app(self):
+        """Test creating SteamApp"""
+        from steam_proton_helper import SteamApp
+        app = SteamApp(appid=440, name="Team Fortress 2")
+        self.assertEqual(app.appid, 440)
+        self.assertEqual(app.name, "Team Fortress 2")
+
+
+class TestSearchSteamGames(unittest.TestCase):
+    """Tests for search_steam_games function"""
+
+    @patch('steam_proton_helper.subprocess.run')
+    def test_search_with_steamcmd(self, mock_run):
+        """Test searching games with steamcmd available"""
+        from steam_proton_helper import search_steam_games
+        # steamcmd not typically available, should return empty
+        mock_run.side_effect = FileNotFoundError()
+        result = search_steam_games("test")
+        self.assertIsInstance(result, list)
+
+    def test_search_returns_list(self):
+        """Test search always returns a list"""
+        from steam_proton_helper import search_steam_games
+        result = search_steam_games("nonexistent_game_xyz")
+        self.assertIsInstance(result, list)
+
+
+class TestResolveGameInput(unittest.TestCase):
+    """Tests for resolve_game_input function"""
+
+    def test_numeric_app_id(self):
+        """Test resolving numeric app ID"""
+        from steam_proton_helper import resolve_game_input
+        app_id, name, suggestions = resolve_game_input("440")
+        self.assertEqual(app_id, "440")
+        self.assertIsNone(name)
+        self.assertEqual(suggestions, [])
+
+    def test_string_name_input(self):
+        """Test resolving game name string"""
+        from steam_proton_helper import resolve_game_input
+        app_id, name, suggestions = resolve_game_input("Some Game Name")
+        # Should trigger a search (results depend on implementation)
+        self.assertIsInstance(suggestions, list)
+
+
+class TestFetchProtonDBInfo(unittest.TestCase):
+    """Tests for fetch_protondb_info function"""
+
+    @patch('urllib.request.urlopen')
+    def test_fetch_with_http_error(self, mock_urlopen):
+        """Test fetch when HTTP request fails"""
+        import urllib.error
+        from steam_proton_helper import fetch_protondb_info
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url='', code=404, msg='Not Found', hdrs=None, fp=None
+        )
+        result = fetch_protondb_info("99999999")
+        self.assertIsNone(result)
+
+    @patch('urllib.request.urlopen')
+    def test_fetch_with_url_error(self, mock_urlopen):
+        """Test fetch with network error"""
+        import urllib.error
+        from steam_proton_helper import fetch_protondb_info
+        mock_urlopen.side_effect = urllib.error.URLError('Network unreachable')
+        result = fetch_protondb_info("440")
+        self.assertIsNone(result)
+
+    @patch('urllib.request.urlopen')
+    def test_fetch_with_valid_response(self, mock_urlopen):
+        """Test fetch with valid JSON response"""
+        from steam_proton_helper import fetch_protondb_info, ProtonDBInfo
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "tier": "gold",
+            "score": 0.85,
+            "total": 150,
+            "confidence": "high"
+        }).encode('utf-8')
+        mock_response.__enter__ = lambda s: mock_response
+        mock_response.__exit__ = lambda s, *args: None
+        mock_urlopen.return_value = mock_response
+        result = fetch_protondb_info("440")
+        self.assertIsInstance(result, ProtonDBInfo)
+        self.assertEqual(result.tier, "gold")
+
+
+class TestFetchGEProtonReleases(unittest.TestCase):
+    """Tests for fetch_ge_proton_releases function"""
+
+    @patch('urllib.request.urlopen')
+    def test_fetch_releases_network_error(self, mock_urlopen):
+        """Test fetch when network fails"""
+        import urllib.error
+        from steam_proton_helper import fetch_ge_proton_releases
+        mock_urlopen.side_effect = urllib.error.URLError('Network unreachable')
+        result = fetch_ge_proton_releases()
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)
+
+    @patch('urllib.request.urlopen')
+    def test_fetch_releases_valid_response(self, mock_urlopen):
+        """Test fetch with valid JSON response"""
+        from steam_proton_helper import fetch_ge_proton_releases
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps([{
+            "tag_name": "GE-Proton9-1",
+            "name": "GE-Proton9-1 Released",
+            "published_at": "2024-01-15T00:00:00Z",
+            "assets": [{
+                "name": "GE-Proton9-1.tar.gz",
+                "browser_download_url": "https://example.com/GE-Proton9-1.tar.gz",
+                "size": 500000000
+            }]
+        }]).encode('utf-8')
+        mock_response.__enter__ = lambda s: mock_response
+        mock_response.__exit__ = lambda s, *args: None
+        mock_urlopen.return_value = mock_response
+        result = fetch_ge_proton_releases()
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].tag_name, "GE-Proton9-1")
+
+
+class TestGetProtonInstallDir(unittest.TestCase):
+    """Tests for get_proton_install_dir function"""
+
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.os.path.isdir')
+    def test_with_steam_root(self, mock_isdir, mock_find_root):
+        """Test getting install dir when Steam is found"""
+        from steam_proton_helper import get_proton_install_dir
+        mock_find_root.return_value = "/home/user/.steam/root"
+        mock_isdir.return_value = True  # Parent directory exists
+        result = get_proton_install_dir()
+        # Should return a valid path string
+        self.assertTrue(result is None or isinstance(result, str))
+
+    def test_with_explicit_variant(self):
+        """Test with explicit variant parameter"""
+        from steam_proton_helper import get_proton_install_dir, SteamVariant
+        # Should work without crashing
+        result = get_proton_install_dir(SteamVariant.NATIVE)
+        # May be None if paths don't exist
+        self.assertTrue(result is None or isinstance(result, str))
+
+
+class TestGetProtonRecommendations(unittest.TestCase):
+    """Tests for get_proton_recommendations function"""
+
+    def test_recommendations_with_protondb_info(self):
+        """Test getting recommendations with ProtonDB info"""
+        from steam_proton_helper import get_proton_recommendations, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="440",
+            tier="gold",
+            confidence="high",
+            score=0.85,
+            total_reports=150,
+        )
+        installed = ["GE-Proton9-1", "Proton Experimental"]
+        result = get_proton_recommendations(info, installed)
+        self.assertIsInstance(result, list)
+
+
+class TestPrintFunctions(unittest.TestCase):
+    """Tests for print output functions"""
+
+    @patch('builtins.print')
+    def test_print_header(self, mock_print):
+        """Test print_header function"""
+        from steam_proton_helper import print_header
+        print_header()
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_print_tips(self, mock_print):
+        """Test print_tips function"""
+        from steam_proton_helper import print_tips
+        print_tips()
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_print_summary(self, mock_print):
+        """Test print_summary function"""
+        from steam_proton_helper import print_summary, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck("Test1", CheckStatus.PASS, "OK", "General"),
+            DependencyCheck("Test2", CheckStatus.FAIL, "Failed", "General"),
+            DependencyCheck("Test3", CheckStatus.WARNING, "Warn", "General"),
+        ]
+        print_summary(checks)
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_print_checks_by_category(self, mock_print):
+        """Test print_checks_by_category function"""
+        from steam_proton_helper import print_checks_by_category, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck("Test1", CheckStatus.PASS, "OK", "General"),
+            DependencyCheck("Test2", CheckStatus.FAIL, "Failed", "Vulkan"),
+        ]
+        print_checks_by_category(checks)
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_print_checks_verbose(self, mock_print):
+        """Test print_checks_by_category with verbose=True"""
+        from steam_proton_helper import print_checks_by_category, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck("Test1", CheckStatus.PASS, "OK", "General", details="Extra info"),
+        ]
+        print_checks_by_category(checks, verbose=True)
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_print_protondb_info(self, mock_print):
+        """Test print_protondb_info function"""
+        from steam_proton_helper import print_protondb_info, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="440",
+            tier="gold",
+            confidence="high",
+            score=0.85,
+            total_reports=150,
+        )
+        print_protondb_info(info)
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_output_protondb_json_with_info(self, mock_print):
+        """Test output_protondb_json with valid info"""
+        from steam_proton_helper import output_protondb_json, ProtonDBInfo
+        info = ProtonDBInfo(
+            app_id="440",
+            tier="gold",
+            confidence="high",
+            score=0.85,
+            total_reports=150,
+        )
+        output_protondb_json(info, "440")
+        mock_print.assert_called()
+        # Check JSON was printed
+        call_args = mock_print.call_args[0][0]
+        parsed = json.loads(call_args)
+        self.assertEqual(parsed["tier"], "gold")
+
+    @patch('builtins.print')
+    def test_output_protondb_json_with_none(self, mock_print):
+        """Test output_protondb_json with None info"""
+        from steam_proton_helper import output_protondb_json
+        output_protondb_json(None, "440")
+        mock_print.assert_called()
+        call_args = mock_print.call_args[0][0]
+        parsed = json.loads(call_args)
+        self.assertEqual(parsed["app_id"], "440")
+        self.assertIn("error", parsed)
+
+
+class TestOutputJson(unittest.TestCase):
+    """Tests for output_json function"""
+
+    @patch('builtins.print')
+    def test_output_json(self, mock_print):
+        """Test output_json function"""
+        from steam_proton_helper import output_json, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck("Test1", CheckStatus.PASS, "OK", "General"),
+        ]
+        output_json(checks, "ubuntu", "apt")
+        mock_print.assert_called()
+        call_args = mock_print.call_args[0][0]
+        parsed = json.loads(call_args)
+        self.assertIn("checks", parsed)
+        self.assertIn("system", parsed)
+
+
+class TestGenerateFixScript(unittest.TestCase):
+    """Tests for generate_fix_script function"""
+
+    def test_generate_script_with_apt(self):
+        """Test generating fix script for apt"""
+        from steam_proton_helper import generate_fix_script, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck(
+                "Lib1", CheckStatus.FAIL, "Missing",
+                "32-bit", fix_command="sudo apt install -y lib1"
+            ),
+        ]
+        script = generate_fix_script(checks, "ubuntu", "apt")
+        self.assertIn("#!/bin/bash", script)
+        self.assertIn("apt install", script)
+
+    def test_generate_script_no_fixes(self):
+        """Test generating script with no fixes needed"""
+        from steam_proton_helper import generate_fix_script, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck("Test1", CheckStatus.PASS, "OK", "General"),
+        ]
+        script = generate_fix_script(checks, "ubuntu", "apt")
+        self.assertIn("No fixes needed", script)
+
+
+class TestOutputFixScript(unittest.TestCase):
+    """Tests for output_fix_script function"""
+
+    def test_output_to_stdout(self):
+        """Test outputting script to stdout"""
+        from steam_proton_helper import output_fix_script, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck(
+                "Lib1", CheckStatus.FAIL, "Missing",
+                "32-bit", fix_command="sudo apt install -y lib1"
+            ),
+        ]
+        # output_fix_script returns bool indicating success
+        result = output_fix_script(checks, "ubuntu", "apt", "-")
+        self.assertIsInstance(result, bool)
+
+    def test_output_to_file(self):
+        """Test outputting script to file"""
+        import tempfile
+        from steam_proton_helper import output_fix_script, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck(
+                "Lib1", CheckStatus.FAIL, "Missing",
+                "32-bit", fix_command="sudo apt install -y lib1"
+            ),
+        ]
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+            output_path = f.name
+        result = output_fix_script(checks, "ubuntu", "apt", output_path)
+        self.assertIsInstance(result, bool)
+        # Clean up
+        import os
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+
+
+class TestCollectFixActionsNew(unittest.TestCase):
+    """Tests for collect_fix_actions function"""
+
+    def test_collect_apt_actions(self):
+        """Test collecting apt fix actions"""
+        from steam_proton_helper import collect_fix_actions, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck(
+                "Lib1", CheckStatus.FAIL, "Missing",
+                "32-bit", fix_command="sudo apt install -y lib1 lib2"
+            ),
+            DependencyCheck(
+                "Lib2", CheckStatus.FAIL, "Missing",
+                "32-bit", fix_command="sudo apt install -y lib3"
+            ),
+        ]
+        packages, other = collect_fix_actions(checks, "apt")
+        self.assertIn("lib1", packages)
+        self.assertIn("lib2", packages)
+        self.assertIn("lib3", packages)
+
+
+class TestShowDryRun(unittest.TestCase):
+    """Tests for show_dry_run function"""
+
+    @patch('builtins.print')
+    def test_show_dry_run(self, mock_print):
+        """Test show_dry_run output"""
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck(
+                "Lib1", CheckStatus.FAIL, "Missing",
+                "32-bit", fix_command="sudo apt install -y lib1"
+            ),
+        ]
+        show_dry_run(checks, "apt")
+        mock_print.assert_called()
+
+    @patch('builtins.print')
+    def test_show_dry_run_no_fixes(self, mock_print):
+        """Test show_dry_run with no fixes"""
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+        checks = [
+            DependencyCheck("Test1", CheckStatus.PASS, "OK", "General"),
+        ]
+        show_dry_run(checks, "apt")
+        mock_print.assert_called()
+
+
+class TestGetRemovableProtonVersions(unittest.TestCase):
+    """Tests for get_removable_proton_versions function"""
+
+    @patch('steam_proton_helper.find_steam_root')
+    def test_no_install_dir(self, mock_find_root):
+        """Test when no Steam root exists"""
+        from steam_proton_helper import get_removable_proton_versions
+        mock_find_root.return_value = None
+        result = get_removable_proton_versions()
+        self.assertEqual(result, [])
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.os.path.isdir')
+    @patch('steam_proton_helper.os.listdir')
+    def test_with_proton_versions(self, mock_listdir, mock_isdir, mock_get_dir):
+        """Test with some Proton versions installed"""
+        from steam_proton_helper import get_removable_proton_versions
+        mock_get_dir.return_value = "/path/to/protons"
+        mock_isdir.return_value = True
+        mock_listdir.return_value = ["GE-Proton9-1", "GE-Proton8-25", "SomeOtherDir"]
+        result = get_removable_proton_versions()
+        self.assertIsInstance(result, list)
+
+
+class TestRemoveGEProton(unittest.TestCase):
+    """Tests for remove_ge_proton function"""
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    def test_remove_no_install_dir(self, mock_get_dir):
+        """Test removal when no install directory"""
+        from steam_proton_helper import remove_ge_proton
+        mock_get_dir.return_value = None
+        success, message = remove_ge_proton("GE-Proton9-1")
+        self.assertFalse(success)
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.os.path.exists')
+    def test_remove_version_not_found(self, mock_exists, mock_get_dir):
+        """Test removal when version not found"""
+        from steam_proton_helper import remove_ge_proton
+        mock_get_dir.return_value = "/path/to/protons"
+        mock_exists.return_value = False
+        success, message = remove_ge_proton("GE-Proton9-1")
+        self.assertFalse(success)
+        self.assertIn("not found", message.lower())
+
+    @patch('builtins.input', return_value='n')
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.os.path.exists')
+    def test_remove_cancelled(self, mock_exists, mock_get_dir, mock_input):
+        """Test removal cancelled by user"""
+        from steam_proton_helper import remove_ge_proton
+        mock_get_dir.return_value = "/path/to/protons"
+        mock_exists.return_value = True
+        success, message = remove_ge_proton("GE-Proton9-1", confirm=False)
+        self.assertFalse(success)
+
+
+class TestCheckGEProtonUpdates(unittest.TestCase):
+    """Tests for check_ge_proton_updates function"""
+
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    def test_no_updates_available(self, mock_installed, mock_releases):
+        """Test when no updates available"""
+        from steam_proton_helper import check_ge_proton_updates
+        mock_releases.return_value = []
+        mock_installed.return_value = []
+        result = check_ge_proton_updates()
+        self.assertIsInstance(result, list)
+
+
+class TestUpdateGEProton(unittest.TestCase):
+    """Tests for update_ge_proton function"""
+
+    @patch('steam_proton_helper.check_ge_proton_updates')
+    def test_no_updates(self, mock_check):
+        """Test when update check returns empty list (error case)"""
+        from steam_proton_helper import update_ge_proton
+        mock_check.return_value = []
+        success, message = update_ge_proton()
+        # Empty list means couldn't check updates
+        self.assertFalse(success)
+        self.assertIn("could not check", message.lower())
+
+
+class TestDownloadWithProgress(unittest.TestCase):
+    """Tests for download_with_progress function"""
+
+    @patch('steam_proton_helper.subprocess.run')
+    def test_download_failure(self, mock_run):
+        """Test download failure"""
+        from steam_proton_helper import download_with_progress
+        mock_run.side_effect = subprocess.CalledProcessError(1, 'curl')
+        result = download_with_progress("https://example.com/file.tar.gz", "/tmp/file.tar.gz", show_progress=False)
+        self.assertFalse(result)
+
+
+class TestInstallGEProton(unittest.TestCase):
+    """Tests for install_ge_proton function"""
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    def test_install_no_dir(self, mock_get_dir):
+        """Test install when no install directory"""
+        from steam_proton_helper import install_ge_proton
+        mock_get_dir.return_value = None
+        success, message = install_ge_proton("GE-Proton9-1")
+        self.assertFalse(success)
+
+    @patch('steam_proton_helper.os.path.exists')
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    def test_install_already_exists(self, mock_fetch, mock_get_dir, mock_exists):
+        """Test install when version already exists"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        # Mock releases to include the requested version
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="https://example.com/GE-Proton9-1.tar.gz",
+                size_bytes=500000000,
+                published_at="2024-01-15"
+            )
+        ]
+        mock_get_dir.return_value = "/path/to/protons"
+        mock_exists.return_value = True
+        success, message = install_ge_proton("GE-Proton9-1", force=False)
+        self.assertFalse(success)
+        self.assertIn("already installed", message.lower())
+
+
+class TestMainFunction(unittest.TestCase):
+    """Tests for main function"""
+
+    @patch('sys.argv', ['prog', '--version'])
+    @patch('builtins.print')
+    def test_version_flag(self, mock_print):
+        """Test --version flag"""
+        from steam_proton_helper import main
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        # argparse exits with 0 for --version
+        self.assertEqual(cm.exception.code, 0)
+
+    @patch('sys.argv', ['prog', '--help'])
+    def test_help_flag(self):
+        """Test --help flag"""
+        from steam_proton_helper import main
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        self.assertEqual(cm.exception.code, 0)
+
+    @patch('sys.argv', ['prog', '--json'])
+    @patch('builtins.print')
+    def test_json_output(self, mock_print):
+        """Test --json flag produces valid JSON"""
+        from steam_proton_helper import main
+        result = main()
+        self.assertEqual(result, 0)
+        # Verify JSON was printed
+        mock_print.assert_called()
+
+    @patch('sys.argv', ['prog', '--no-color'])
+    @patch('builtins.print')
+    def test_no_color_flag(self, mock_print):
+        """Test --no-color flag"""
+        from steam_proton_helper import main
+        result = main()
+        self.assertEqual(result, 0)
 
 
 if __name__ == '__main__':

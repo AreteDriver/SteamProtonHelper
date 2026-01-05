@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
@@ -3889,6 +3890,382 @@ class TestUpdateGEProtonBranches(unittest.TestCase):
         mock_install.return_value = (True, "Updated successfully")
         success, msg = update_ge_proton()
         self.assertTrue(success)
+
+
+class TestDistroDetectorExceptions(unittest.TestCase):
+    """Tests for DistroDetector exception handling"""
+
+    @patch('builtins.open', side_effect=Exception("Read error"))
+    @patch('os.path.exists', return_value=True)
+    def test_detect_distro_exception(self, mock_exists, mock_open):
+        """Test exception handling in detect_distro"""
+        from steam_proton_helper import DistroDetector
+        distro, pm = DistroDetector.detect_distro()
+        self.assertEqual(distro, 'unknown')
+        self.assertEqual(pm, 'unknown')
+
+
+class TestFindSteamRootExceptions(unittest.TestCase):
+    """Tests for find_steam_root exception handling"""
+
+    @patch('os.path.expanduser')
+    @patch('os.path.realpath')
+    @patch('os.path.isdir', side_effect=PermissionError("Access denied"))
+    def test_find_steam_root_permission_error(self, mock_isdir, mock_realpath, mock_expand):
+        """Test PermissionError handling in find_steam_root"""
+        from steam_proton_helper import find_steam_root
+        mock_expand.return_value = '/home/user/.steam/steam'
+        mock_realpath.return_value = '/home/user/.steam/steam'
+        result = find_steam_root()
+        # Should return None when all paths fail with PermissionError
+        self.assertIsNone(result)
+
+
+class TestInstallGEProtonBranchesMore(unittest.TestCase):
+    """More tests for install_ge_proton branches"""
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    def test_install_partial_version_match(self, mock_fetch, mock_dir):
+        """Test partial version match in install_ge_proton"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        mock_dir.return_value = '/path/to/install'
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-20",
+                name="GE-Proton9-20",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        # Use partial match "9-20" which should match "GE-Proton9-20"
+        with patch('os.path.exists', return_value=False):
+            with patch('steam_proton_helper.download_with_progress', return_value=False):
+                success, msg = install_ge_proton('9-20')
+        # Should find partial match but fail on download
+        self.assertFalse(success)
+        self.assertIn("Download failed", msg)
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    def test_install_no_install_dir(self, mock_fetch, mock_dir):
+        """Test install_ge_proton when no install directory found"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        mock_dir.return_value = None
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        success, msg = install_ge_proton('latest')
+        self.assertFalse(success)
+        self.assertIn("compatibilitytools.d", msg)
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('os.path.exists', return_value=False)
+    @patch('steam_proton_helper.download_with_progress', return_value=True)
+    @patch('tarfile.open')
+    @patch('os.path.isdir', return_value=True)
+    @patch('builtins.print')
+    @patch('tempfile.NamedTemporaryFile')
+    def test_install_extraction_success(self, mock_temp, mock_print, mock_isdir, mock_tar,
+                                         mock_download, mock_exists, mock_fetch, mock_dir):
+        """Test successful extraction in install_ge_proton"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        mock_dir.return_value = '/path/to/install'
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        mock_temp_file = MagicMock()
+        mock_temp_file.name = '/tmp/test.tar.gz'
+        mock_temp_file.__enter__ = MagicMock(return_value=mock_temp_file)
+        mock_temp_file.__exit__ = MagicMock(return_value=False)
+        mock_temp.return_value = mock_temp_file
+        mock_tar_obj = MagicMock()
+        mock_tar_obj.__enter__ = MagicMock(return_value=mock_tar_obj)
+        mock_tar_obj.__exit__ = MagicMock(return_value=False)
+        mock_tar.return_value = mock_tar_obj
+        success, msg = install_ge_proton('latest')
+        self.assertTrue(success)
+        self.assertIn("Successfully installed", msg)
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('os.path.exists', return_value=False)
+    @patch('steam_proton_helper.download_with_progress', return_value=True)
+    @patch('tarfile.open', side_effect=tarfile.TarError("Corrupt archive"))
+    @patch('builtins.print')
+    @patch('tempfile.NamedTemporaryFile')
+    def test_install_extraction_failure(self, mock_temp, mock_print, mock_tar,
+                                         mock_download, mock_exists, mock_fetch, mock_dir):
+        """Test extraction failure in install_ge_proton"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        mock_dir.return_value = '/path/to/install'
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        mock_temp_file = MagicMock()
+        mock_temp_file.name = '/tmp/test.tar.gz'
+        mock_temp_file.__enter__ = MagicMock(return_value=mock_temp_file)
+        mock_temp_file.__exit__ = MagicMock(return_value=False)
+        mock_temp.return_value = mock_temp_file
+        success, msg = install_ge_proton('latest')
+        self.assertFalse(success)
+        self.assertIn("Extraction failed", msg)
+
+
+class TestRemoveGEProtonBranchesMore(unittest.TestCase):
+    """More tests for remove_ge_proton branches"""
+
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    def test_remove_partial_match(self, mock_removable):
+        """Test partial version match in remove_ge_proton"""
+        from steam_proton_helper import remove_ge_proton
+        mock_removable.return_value = [
+            ("GE-Proton9-15", "/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-15"),
+        ]
+        # Use partial match "9-15" which should match "GE-Proton9-15"
+        with patch('shutil.rmtree'):
+            success, msg = remove_ge_proton("9-15", confirm=False)
+        self.assertTrue(success)
+
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    @patch('builtins.input', return_value='n')
+    @patch('builtins.print')
+    def test_remove_user_says_no(self, mock_print, mock_input, mock_removable):
+        """Test user declining removal"""
+        from steam_proton_helper import remove_ge_proton
+        mock_removable.return_value = [
+            ("GE-Proton9-1", "/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1"),
+        ]
+        success, msg = remove_ge_proton("GE-Proton9-1", confirm=True)
+        self.assertFalse(success)
+        self.assertIn("cancelled", msg)
+
+    @patch('steam_proton_helper.get_removable_proton_versions')
+    @patch('shutil.rmtree', side_effect=OSError("Disk full"))
+    @patch('builtins.print')
+    def test_remove_os_error(self, mock_print, mock_rmtree, mock_removable):
+        """Test OSError during removal"""
+        from steam_proton_helper import remove_ge_proton
+        mock_removable.return_value = [
+            ("GE-Proton9-1", "/home/user/.steam/steam/compatibilitytools.d/GE-Proton9-1"),
+        ]
+        success, msg = remove_ge_proton("GE-Proton9-1", confirm=False)
+        self.assertFalse(success)
+        self.assertIn("Failed to remove", msg)
+
+
+class TestResolveGameInputBranches(unittest.TestCase):
+    """Tests for resolve_game_input branches"""
+
+    @patch('steam_proton_helper.search_steam_games')
+    def test_resolve_game_exact_match_among_multiple(self, mock_search):
+        """Test exact match prioritization when multiple matches exist"""
+        from steam_proton_helper import resolve_game_input, SteamApp
+        mock_search.return_value = [
+            SteamApp(appid=12345, name="Half-Life"),
+            SteamApp(appid=67890, name="Half-Life 2"),
+            SteamApp(appid=11111, name="Half-Life: Source"),
+        ]
+        app_id, name, matches = resolve_game_input("Half-Life")
+        self.assertEqual(app_id, "12345")
+        self.assertEqual(name, "Half-Life")
+        self.assertEqual(matches, [])  # No extra matches when exact found
+
+
+class TestWineBranches(unittest.TestCase):
+    """Tests for wine check branches"""
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    @patch.object(DependencyChecker, 'run_command')
+    def test_wine64_version_check(self, mock_run, mock_exists):
+        """Test wine64 version detection"""
+        from steam_proton_helper import DependencyChecker
+        mock_exists.side_effect = lambda cmd: cmd == 'wine64'
+        mock_run.return_value = (0, "wine-9.0", "")
+        checker = DependencyChecker("Ubuntu", "apt")
+        checks = checker.check_wine()
+        wine_check = next((c for c in checks if c.name == "Wine"), None)
+        self.assertIsNotNone(wine_check)
+        self.assertEqual(wine_check.status, CheckStatus.PASS)
+        self.assertIn("9.0", wine_check.message)
+
+
+class TestCheckGEProtonUpdatesMore(unittest.TestCase):
+    """More tests for check_ge_proton_updates"""
+
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    def test_check_updates_no_releases(self, mock_fetch, mock_root):
+        """Test check_ge_proton_updates when no releases fetched"""
+        from steam_proton_helper import check_ge_proton_updates
+        mock_root.return_value = "/home/user/.steam/steam"
+        mock_fetch.return_value = []
+        result = check_ge_proton_updates()
+        self.assertEqual(result, [])
+
+    @patch('steam_proton_helper.find_steam_root')
+    @patch('steam_proton_helper.find_proton_installations')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    def test_check_updates_no_ge_installed(self, mock_fetch, mock_installs, mock_root):
+        """Test check_ge_proton_updates when no GE-Proton installed"""
+        from steam_proton_helper import check_ge_proton_updates, ProtonInstall, GEProtonRelease
+        mock_root.return_value = "/home/user/.steam/steam"
+        # Only official Proton installed, no GE versions
+        mock_installs.return_value = [
+            ProtonInstall(
+                name="Proton 8.0",
+                path="/home/user/.steam/steam/steamapps/common/Proton 8.0",
+                has_executable=True,
+                has_toolmanifest=True,
+                has_version=True
+            )
+        ]
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-2",
+                name="GE-Proton9-2",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        result = check_ge_proton_updates()
+        self.assertEqual(len(result), 1)
+        self.assertIsNone(result[0]['installed'])
+        self.assertTrue(result[0]['update_available'])
+
+
+class TestDetectSteamVariantBranches(unittest.TestCase):
+    """Tests for detect_steam_variant branches"""
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    def test_detect_flatpak_steam(self, mock_exists, mock_run):
+        """Test detecting Flatpak Steam"""
+        from steam_proton_helper import detect_steam_variant, SteamVariant
+        mock_exists.return_value = False  # No native Steam
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        variant, desc = detect_steam_variant()
+        self.assertEqual(variant, SteamVariant.FLATPAK)
+        self.assertIn("Flatpak", desc)
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    def test_detect_snap_steam(self, mock_exists, mock_run):
+        """Test detecting Snap Steam"""
+        from steam_proton_helper import detect_steam_variant, SteamVariant
+        mock_exists.return_value = False  # No native Steam
+
+        def run_side_effect(args, **kwargs):
+            if 'flatpak' in args:
+                raise FileNotFoundError("flatpak not found")
+            elif 'snap' in args:
+                return MagicMock(returncode=0, stdout="steam 1.0.0.79 latest/stable canonical✓")
+            return MagicMock(returncode=1)
+
+        mock_run.side_effect = run_side_effect
+        variant, desc = detect_steam_variant()
+        self.assertEqual(variant, SteamVariant.SNAP)
+        self.assertIn("Snap", desc)
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    def test_detect_multiple_variants(self, mock_exists, mock_run):
+        """Test detecting multiple Steam variants"""
+        from steam_proton_helper import detect_steam_variant, SteamVariant
+        mock_exists.return_value = True  # Native Steam exists
+
+        def run_side_effect(args, **kwargs):
+            # Also flatpak Steam exists
+            if 'flatpak' in args:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            return MagicMock(returncode=1)
+
+        mock_run.side_effect = run_side_effect
+        variant, desc = detect_steam_variant()
+        self.assertEqual(variant, SteamVariant.NATIVE)
+        self.assertIn("also found", desc)
+
+    @patch('subprocess.run', side_effect=Exception("General error"))
+    @patch('os.path.exists')
+    def test_detect_flatpak_general_exception(self, mock_exists, mock_run):
+        """Test exception handling in Flatpak detection"""
+        from steam_proton_helper import detect_steam_variant, SteamVariant
+        mock_exists.return_value = True  # Native Steam exists
+        variant, desc = detect_steam_variant()
+        self.assertEqual(variant, SteamVariant.NATIVE)
+
+
+class TestUpdateGEProtonBranchesMore(unittest.TestCase):
+    """More tests for update_ge_proton branches"""
+
+    @patch('steam_proton_helper.check_ge_proton_updates')
+    def test_update_no_latest_version(self, mock_check):
+        """Test update when latest version cannot be determined"""
+        from steam_proton_helper import update_ge_proton
+        mock_check.return_value = [{'installed': None, 'latest': None, 'update_available': False}]
+        success, msg = update_ge_proton()
+        self.assertFalse(success)
+        self.assertIn("Could not determine", msg)
+
+
+class TestInstallVerifyBranches(unittest.TestCase):
+    """Tests for install verification branches"""
+
+    @patch('steam_proton_helper.get_proton_install_dir')
+    @patch('steam_proton_helper.fetch_ge_proton_releases')
+    @patch('os.path.exists', return_value=False)
+    @patch('steam_proton_helper.download_with_progress', return_value=True)
+    @patch('tarfile.open')
+    @patch('os.path.isdir', return_value=False)  # target_path doesn't exist after extract
+    @patch('builtins.print')
+    @patch('tempfile.NamedTemporaryFile')
+    def test_install_verify_path_not_found(self, mock_temp, mock_print, mock_isdir, mock_tar,
+                                           mock_download, mock_exists, mock_fetch, mock_dir):
+        """Test installation when target_path not found after extraction"""
+        from steam_proton_helper import install_ge_proton, GEProtonRelease
+        mock_dir.return_value = '/path/to/install'
+        mock_fetch.return_value = [
+            GEProtonRelease(
+                tag_name="GE-Proton9-1",
+                name="GE-Proton9-1",
+                download_url="http://example.com/ge.tar.gz",
+                size_bytes=500 * 1024 * 1024,
+                published_at="2024-01-01"
+            )
+        ]
+        mock_temp_file = MagicMock()
+        mock_temp_file.name = '/tmp/test.tar.gz'
+        mock_temp_file.__enter__ = MagicMock(return_value=mock_temp_file)
+        mock_temp_file.__exit__ = MagicMock(return_value=False)
+        mock_temp.return_value = mock_temp_file
+        mock_tar_obj = MagicMock()
+        mock_tar_obj.__enter__ = MagicMock(return_value=mock_tar_obj)
+        mock_tar_obj.__exit__ = MagicMock(return_value=False)
+        mock_tar.return_value = mock_tar_obj
+        success, msg = install_ge_proton('latest')
+        self.assertTrue(success)  # Still returns True with different message
+        self.assertIn("Installed to", msg)
 
 
 if __name__ == '__main__':

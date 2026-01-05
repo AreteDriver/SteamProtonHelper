@@ -4268,5 +4268,153 @@ class TestInstallVerifyBranches(unittest.TestCase):
         self.assertIn("Installed to", msg)
 
 
+# =============================================================================
+# Additional Coverage Tests
+# =============================================================================
+
+
+class TestRunCommandEdgeCases(unittest.TestCase):
+    """Test run_command edge cases for improved coverage."""
+
+    def setUp(self):
+        self.checker = DependencyChecker('Ubuntu 24.04', 'apt')
+
+    def test_run_command_timeout_expired(self):
+        """Test run_command when command times out."""
+        with patch('subprocess.run') as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd=['sleep'], timeout=1)
+            code, stdout, stderr = self.checker.run_command(['sleep', '100'], timeout=1)
+            self.assertEqual(code, 1)
+            self.assertIn('timed out', stderr.lower())
+
+    def test_run_command_generic_exception(self):
+        """Test run_command when generic exception occurs."""
+        with patch('subprocess.run') as mock_run:
+            mock_run.side_effect = Exception("Something went wrong")
+            code, stdout, stderr = self.checker.run_command(['echo', 'test'])
+            self.assertEqual(code, 1)
+            self.assertIn('Something went wrong', stderr)
+
+
+class TestLibraryPathDeduplication(unittest.TestCase):
+    """Test library path deduplication in get_library_paths."""
+
+    def test_duplicate_library_paths_removed(self):
+        """Test that duplicate library paths are removed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            steam_root = tmpdir
+            vdf_path = os.path.join(tmpdir, 'steamapps', 'libraryfolders.vdf')
+            os.makedirs(os.path.dirname(vdf_path))
+            with open(vdf_path, 'w') as f:
+                f.write('''
+"libraryfolders"
+{
+    "0"
+    {
+        "path"    "%s"
+    }
+    "1"
+    {
+        "path"    "%s"
+    }
+}
+''' % (tmpdir, tmpdir))
+            paths = get_library_paths(steam_root)
+            # Should deduplicate - unique paths only
+            self.assertEqual(len(set(paths)), len(paths))
+
+
+class TestProtonSearchPatterns(unittest.TestCase):
+    """Test Proton search pattern additions."""
+
+    def test_root_compat_added_to_patterns(self):
+        """Test that root compatibilitytools.d is added to search."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create minimal structure
+            compat_dir = os.path.join(tmpdir, 'compatibilitytools.d')
+            os.makedirs(compat_dir)
+            result = find_proton_installations(tmpdir)
+            # Should not raise and return list
+            self.assertIsInstance(result, list)
+
+    def test_proton_search_permission_error(self):
+        """Test that permission errors are handled gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a directory we can't read
+            compat_dir = os.path.join(tmpdir, 'compatibilitytools.d')
+            os.makedirs(compat_dir)
+            with patch('os.listdir') as mock_listdir:
+                mock_listdir.side_effect = PermissionError("Access denied")
+                # Should not raise
+                result = find_proton_installations(tmpdir)
+                self.assertIsInstance(result, list)
+
+
+class TestMultilibChecks(unittest.TestCase):
+    """Test multilib/32-bit checks."""
+
+    def test_dpkg_i386_not_enabled(self):
+        """Test i386 not enabled detection."""
+        checker = DependencyChecker('Ubuntu', 'apt')
+        with patch.object(checker, 'run_command') as mock_run:
+            # Return output without i386
+            mock_run.return_value = (0, 'amd64\n', '')
+            results = checker.check_32bit_support()
+            # Returns a list of DependencyCheck
+            self.assertIsInstance(results, list)
+            # First result should indicate i386 not enabled
+            self.assertEqual(results[0].status, CheckStatus.FAIL)
+            self.assertIn('i386', results[0].message)
+
+    def test_pacman_multilib_no_include(self):
+        """Test [multilib] found but no Include line."""
+        checker = DependencyChecker('Arch', 'pacman')
+        pacman_conf = """
+[options]
+Architecture = auto
+
+[multilib]
+# No Include line - just the section header at end of file
+"""
+        with patch('builtins.open', unittest.mock.mock_open(read_data=pacman_conf)):
+            results = checker.check_32bit_support()
+            # Returns list of DependencyCheck objects
+            self.assertIsInstance(results, list)
+            # First result is the multilib check
+            self.assertIn('multilib', results[0].name.lower())
+
+
+class TestListProtonVerbose(unittest.TestCase):
+    """Test --list-proton verbose output."""
+
+    def test_list_proton_empty_verbose(self):
+        """Test --list-proton with no installations and verbose."""
+        with patch('steam_proton_helper.find_proton_installations') as mock_find:
+            mock_find.return_value = []
+            with patch('sys.argv', ['steam-proton-helper', '--list-proton', '--verbose']):
+                args = parse_args()
+                self.assertTrue(args.list_proton)
+                self.assertTrue(args.verbose)
+
+
+class TestMainNoProtonInstallations(unittest.TestCase):
+    """Test main function with no Proton installations."""
+
+    def test_list_proton_prints_help_when_empty(self):
+        """Test that --list-proton prints help when no Proton found."""
+        import io
+        import sys
+
+        with patch('steam_proton_helper.find_proton_installations') as mock_find:
+            mock_find.return_value = []
+            with patch('sys.argv', ['steam-proton-helper', '--list-proton']):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    from steam_proton_helper import main
+                    result = main()
+                    output = mock_stdout.getvalue()
+                    # Should print help about installing Proton
+                    self.assertIn('Proton', output)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

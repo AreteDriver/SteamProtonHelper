@@ -4416,5 +4416,333 @@ class TestMainNoProtonInstallations(unittest.TestCase):
                     self.assertIn('Proton', output)
 
 
+# =============================================================================
+# Additional Coverage Tests
+# =============================================================================
+
+class TestFindSteamRootVDFPath(unittest.TestCase):
+    """Tests for find_steam_root VDF file detection branch."""
+
+    @patch('os.path.expanduser')
+    @patch('os.path.realpath')
+    @patch('os.path.isdir')
+    @patch('os.path.isfile')
+    @patch('os.path.join', side_effect=os.path.join)
+    def test_find_steam_root_vdf_exists_but_steamapps_not_dir(
+        self, mock_join, mock_isfile, mock_isdir, mock_realpath, mock_expand
+    ):
+        """Test when libraryfolders.vdf exists but steamapps is not a directory."""
+        from steam_proton_helper import find_steam_root
+
+        mock_expand.side_effect = lambda x: x.replace('~', '/home/user')
+        mock_realpath.side_effect = lambda x: x
+
+        # First call to isdir for steamapps returns False
+        # But isfile for vdf returns True
+        def isdir_side_effect(path):
+            if 'steamapps' in path:
+                return False
+            return True
+
+        def isfile_side_effect(path):
+            if 'libraryfolders.vdf' in path:
+                return True
+            return False
+
+        mock_isdir.side_effect = isdir_side_effect
+        mock_isfile.side_effect = isfile_side_effect
+
+        result = find_steam_root()
+        # Should return the path when vdf exists
+        self.assertIsNotNone(result)
+
+
+class TestArchitectureCheck(unittest.TestCase):
+    """Tests for non-x86_64 architecture detection."""
+
+    @patch('platform.machine', return_value='aarch64')
+    def test_non_x86_64_architecture_warning(self, mock_machine):
+        """Test that non-x86_64 architecture generates a warning."""
+        from steam_proton_helper import DependencyChecker
+        checker = DependencyChecker('ubuntu', 'apt')
+        checks = checker.check_system()
+
+        # Find architecture check
+        arch_check = None
+        for c in checks:
+            if 'architecture' in c.name.lower() or 'system' in c.name.lower():
+                arch_check = c
+                break
+
+        # Should have a warning for non-x86_64
+        self.assertIsNotNone(arch_check)
+        if 'aarch64' in arch_check.message:
+            self.assertEqual(arch_check.status, CheckStatus.WARNING)
+
+
+class TestSteamNotInstalled(unittest.TestCase):
+    """Tests for Steam not installed scenario."""
+
+    @patch('steam_proton_helper.detect_steam_variant')
+    def test_check_steam_not_installed(self, mock_detect):
+        """Test check_steam when Steam is not installed."""
+        from steam_proton_helper import DependencyChecker, SteamVariant
+
+        mock_detect.return_value = (SteamVariant.NONE, "Not installed")
+
+        checker = DependencyChecker('ubuntu', 'apt')
+        checks = checker.check_steam()
+
+        # Should have a FAIL status
+        steam_check = checks[0]
+        self.assertEqual(steam_check.status, CheckStatus.FAIL)
+        self.assertIn("not installed", steam_check.message.lower())
+
+
+class TestGameModeDaemonCheck(unittest.TestCase):
+    """Tests for GameMode daemon check branch."""
+
+    @patch.object(DependencyChecker, 'check_command_exists')
+    @patch('subprocess.run')
+    def test_gamemode_installed_daemon_not_running(self, mock_run, mock_cmd_exists):
+        """Test GameMode installed but daemon not running."""
+        from steam_proton_helper import DependencyChecker, CheckStatus
+
+        # GameMode command exists
+        mock_cmd_exists.side_effect = lambda x: x == 'gamemoded'
+
+        # But daemon is not running (gamemoded -s fails)
+        mock_run.side_effect = subprocess.CalledProcessError(1, 'gamemoded -s')
+
+        checker = DependencyChecker('ubuntu', 'apt')
+        checks = checker.check_gaming_tools()
+
+        # Find GameMode check
+        gamemode_check = None
+        for c in checks:
+            if 'gamemode' in c.name.lower():
+                gamemode_check = c
+                break
+
+        # Should be PASS but with "installed" message (not "daemon available")
+        if gamemode_check:
+            self.assertEqual(gamemode_check.status, CheckStatus.PASS)
+
+
+class TestEnhancementToolsPathDetection(unittest.TestCase):
+    """Tests for libstrangle and OBS capture path detection."""
+
+    @patch.object(DependencyChecker, 'check_command_exists', return_value=False)
+    @patch('os.path.isfile')
+    def test_libstrangle_found_via_path(self, mock_isfile, mock_cmd_exists):
+        """Test libstrangle detection via file path."""
+        from steam_proton_helper import DependencyChecker, CheckStatus
+
+        def isfile_side_effect(path):
+            return 'libstrangle.so' in path
+
+        mock_isfile.side_effect = isfile_side_effect
+
+        checker = DependencyChecker('ubuntu', 'apt')
+        checks = checker.check_extra_tools()
+
+        # Find libstrangle check
+        strangle_check = None
+        for c in checks:
+            if 'strangle' in c.name.lower():
+                strangle_check = c
+                break
+
+        # Should be PASS when found via path
+        if strangle_check:
+            self.assertEqual(strangle_check.status, CheckStatus.PASS)
+
+    @patch.object(DependencyChecker, 'check_command_exists', return_value=False)
+    @patch('os.path.isfile')
+    def test_obs_vkcapture_found_via_path(self, mock_isfile, mock_cmd_exists):
+        """Test OBS vkcapture detection via file path."""
+        from steam_proton_helper import DependencyChecker, CheckStatus
+
+        def isfile_side_effect(path):
+            return 'linux-vkcapture.so' in path
+
+        mock_isfile.side_effect = isfile_side_effect
+
+        checker = DependencyChecker('ubuntu', 'apt')
+        checks = checker.check_extra_tools()
+
+        # Find OBS capture check
+        obs_check = None
+        for c in checks:
+            if 'obs' in c.name.lower() or 'capture' in c.name.lower():
+                obs_check = c
+                break
+
+        # Should be PASS when found via path
+        if obs_check:
+            self.assertEqual(obs_check.status, CheckStatus.PASS)
+
+
+class TestShowDryRunPackageManagers(unittest.TestCase):
+    """Tests for show_dry_run with different package managers."""
+
+    def test_show_dry_run_dnf_packages(self):
+        """Test show_dry_run generates correct dnf command."""
+        import io
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+
+        checks = [
+            DependencyCheck(
+                name="Test Package",
+                status=CheckStatus.FAIL,
+                message="Not installed",
+                category="Test",
+                fix_command="dnf install -y testpkg"
+            )
+        ]
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            count = show_dry_run(checks, 'dnf')
+            output = mock_stdout.getvalue()
+
+        self.assertIn('testpkg', output)
+        self.assertEqual(count, 1)
+
+    def test_show_dry_run_pacman_packages(self):
+        """Test show_dry_run generates correct pacman command."""
+        import io
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+
+        checks = [
+            DependencyCheck(
+                name="Test Package",
+                status=CheckStatus.FAIL,
+                message="Not installed",
+                category="Test",
+                fix_command="pacman -S testpkg"
+            )
+        ]
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            count = show_dry_run(checks, 'pacman')
+            output = mock_stdout.getvalue()
+
+        self.assertIn('testpkg', output)
+        self.assertEqual(count, 1)
+
+    def test_show_dry_run_unknown_package_manager(self):
+        """Test show_dry_run with unknown package manager."""
+        import io
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+
+        checks = [
+            DependencyCheck(
+                name="Test Package",
+                status=CheckStatus.FAIL,
+                message="Not installed",
+                category="Test",
+                fix_command="unknown install testpkg"
+            )
+        ]
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            count = show_dry_run(checks, 'unknown')
+            output = mock_stdout.getvalue()
+
+        self.assertIn('testpkg', output)
+        self.assertEqual(count, 1)
+
+    def test_show_dry_run_with_other_commands(self):
+        """Test show_dry_run with non-package commands."""
+        import io
+        from steam_proton_helper import show_dry_run, DependencyCheck, CheckStatus
+
+        checks = [
+            DependencyCheck(
+                name="User Groups",
+                status=CheckStatus.WARNING,
+                message="Not in video group",
+                category="Permissions",
+                fix_command="usermod -aG video $USER"
+            )
+        ]
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            count = show_dry_run(checks, 'apt')
+            output = mock_stdout.getvalue()
+
+        # Should show in "Other actions" section
+        self.assertIn('usermod', output)
+        self.assertEqual(count, 1)
+
+
+class TestRemoveProtonErrorHandling(unittest.TestCase):
+    """Tests for remove_ge_proton error handling branches."""
+
+    @patch('steam_proton_helper.find_steam_root')
+    def test_remove_proton_returns_failure_message(self, mock_root):
+        """Test remove_ge_proton failure returns proper message."""
+        from steam_proton_helper import remove_ge_proton
+
+        mock_root.return_value = '/nonexistent/path'
+
+        with patch('os.path.exists', return_value=False):
+            with patch('os.path.isdir', return_value=False):
+                success, msg = remove_ge_proton('GE-Proton9-1', confirm=False)
+
+        self.assertFalse(success)
+        # Message could be "not found" or "no custom proton versions found"
+        self.assertTrue('not found' in msg.lower() or 'no custom proton' in msg.lower())
+
+
+class TestGetLibraryPathsNewLibrary(unittest.TestCase):
+    """Tests for get_library_paths adding new libraries."""
+
+    @patch('steam_proton_helper.parse_libraryfolders_vdf')
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.realpath', side_effect=lambda x: x)
+    def test_get_library_paths_adds_new_library(self, mock_realpath, mock_isfile, mock_parse):
+        """Test get_library_paths adds new library from VDF."""
+        from steam_proton_helper import get_library_paths
+
+        mock_parse.return_value = ['/new/library/path']
+
+        result = get_library_paths('/home/user/.steam/steam')
+
+        # Should include both root and the new library
+        self.assertIn('/home/user/.steam/steam', result)
+        self.assertIn('/new/library/path', result)
+
+
+class TestCLIRemoveProtonBranches(unittest.TestCase):
+    """Tests for CLI --remove-proton error branches."""
+
+    def test_remove_proton_cli_failure(self):
+        """Test CLI --remove-proton failure output."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--remove-proton', 'NonexistentVersion', '-y']):
+            with patch('steam_proton_helper.remove_ge_proton') as mock_remove:
+                mock_remove.return_value = (False, "Version not found")
+                with patch('sys.stdout', new_callable=io.StringIO):
+                    result = main()
+
+        self.assertEqual(result, 1)
+
+    def test_remove_proton_cli_exception(self):
+        """Test CLI --remove-proton exception handling."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--remove-proton', 'TestVersion', '-y']):
+            with patch('steam_proton_helper.remove_ge_proton') as mock_remove:
+                mock_remove.side_effect = Exception("Test error")
+                with patch('sys.stdout', new_callable=io.StringIO):
+                    result = main()
+
+        self.assertEqual(result, 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

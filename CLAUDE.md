@@ -4,7 +4,7 @@
 Comprehensive Linux tool for Steam and Proton gaming setup. System checks, GE-Proton management, ProtonDB lookups, and a PyQt6 GUI.
 
 **Stack**: Python, PyQt6 (GUI), requests
-**Version**: 2.0.0
+**Version**: 2.2.x
 **Platform**: Linux only
 
 ---

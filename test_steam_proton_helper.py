@@ -1725,7 +1725,6 @@ class TestCollectFixActions(unittest.TestCase):
         packages, other = collect_fix_actions(checks, "apt")
         self.assertEqual(packages.count("pkg1"), 1)
 
-
 class TestShowDryRun(unittest.TestCase):
     """Test show_dry_run function"""
 
@@ -4993,6 +4992,437 @@ class TestListProtonNoSteam(unittest.TestCase):
         self.assertEqual(result, 1)
         data = json.loads(output)
         self.assertIn('error', data)
+
+
+class TestPrintSummary(unittest.TestCase):
+    """Tests for print_summary function (lines 2080, 2084)."""
+
+    @patch('builtins.print')
+    def test_print_summary_with_skipped(self, mock_print):
+        """Test print_summary shows skipped count (line 2080)."""
+        from steam_proton_helper import print_summary, DependencyCheck, CheckStatus
+
+        checks = [
+            DependencyCheck("Pass", CheckStatus.PASS, "OK", "System"),
+            DependencyCheck("Skip1", CheckStatus.SKIPPED, "Skipped", "Test"),
+            DependencyCheck("Skip2", CheckStatus.SKIPPED, "Skipped", "Test"),
+        ]
+        print_summary(checks)
+
+        # Should include skipped count
+        calls = [str(c) for c in mock_print.call_args_list]
+        self.assertTrue(any("Skipped" in c for c in calls))
+
+    @patch('builtins.print')
+    def test_print_summary_all_passed(self, mock_print):
+        """Test print_summary 'ready for gaming' message (line 2084)."""
+        from steam_proton_helper import print_summary, DependencyCheck, CheckStatus
+
+        checks = [
+            DependencyCheck("Pass1", CheckStatus.PASS, "OK", "System"),
+            DependencyCheck("Pass2", CheckStatus.PASS, "OK", "Graphics"),
+        ]
+        print_summary(checks)
+
+        # Should show ready message
+        calls = [str(c) for c in mock_print.call_args_list]
+        self.assertTrue(any("ready for Steam gaming" in c for c in calls))
+
+
+class TestResolveGameInputSingleMatch(unittest.TestCase):
+    """Tests for resolve_game_input single match (line 1357)."""
+
+    @patch('steam_proton_helper.search_steam_games')
+    def test_single_match_returns_app_info(self, mock_search):
+        """Test single match returns app ID and name (line 1357)."""
+        from steam_proton_helper import resolve_game_input, SteamApp
+
+        mock_search.return_value = [
+            SteamApp(appid=220, name="Half-Life 2")
+        ]
+
+        app_id, name, matches = resolve_game_input("Half-Life 2")
+
+        self.assertEqual(app_id, "220")
+        self.assertEqual(name, "Half-Life 2")
+        self.assertEqual(matches, [])
+
+
+class TestResolveGameInputNoExactMatch(unittest.TestCase):
+    """Tests for resolve_game_input multiple matches without exact (line 1364)."""
+
+    @patch('steam_proton_helper.search_steam_games')
+    def test_multiple_no_exact_returns_matches(self, mock_search):
+        """Test multiple matches without exact returns match list (line 1364)."""
+        from steam_proton_helper import resolve_game_input, SteamApp
+
+        mock_search.return_value = [
+            SteamApp(appid=220, name="Half-Life 2"),
+            SteamApp(appid=340, name="Half-Life 2: Lost Coast"),
+            SteamApp(appid=380, name="Half-Life 2: Episode One"),
+        ]
+
+        # Search for something that doesn't exactly match any
+        app_id, name, matches = resolve_game_input("Half")
+
+        self.assertIsNone(app_id)
+        self.assertIsNone(name)
+        self.assertEqual(len(matches), 3)
+
+
+class TestApplyFixesUnsupportedManager(unittest.TestCase):
+    """Tests for apply_fixes with unsupported package manager (line 2493)."""
+
+    @patch('steam_proton_helper.collect_fix_actions')
+    @patch('builtins.print')
+    def test_apply_fixes_unsupported_manager(self, mock_print, mock_collect):
+        """Test apply_fixes returns error for unsupported manager (line 2493)."""
+        from steam_proton_helper import apply_fixes, DependencyCheck, CheckStatus
+
+        # Mock collect_fix_actions to return packages (bypass extraction)
+        mock_collect.return_value = (['pkg'], [])
+
+        checks = [
+            DependencyCheck(
+                "Test", CheckStatus.FAIL, "Missing", "System",
+                fix_command="custom install pkg"
+            )
+        ]
+
+        # Use skip_confirm=True to avoid input prompt
+        success, message = apply_fixes(checks, "unsupported", skip_confirm=True)
+
+        self.assertFalse(success)
+        self.assertIn("Unsupported package manager", message)
+
+
+class TestApplyFixesInstallFailure(unittest.TestCase):
+    """Tests for apply_fixes installation failure (line 2521)."""
+
+    @patch('subprocess.run')
+    @patch('builtins.print')
+    def test_apply_fixes_install_failure_exit_code(self, mock_print, mock_run):
+        """Test apply_fixes handles non-zero exit code (line 2521)."""
+        from steam_proton_helper import apply_fixes, DependencyCheck, CheckStatus
+
+        # Mock subprocess to return non-zero on install (first call is apt update)
+        mock_run.side_effect = [
+            MagicMock(returncode=0),  # apt update
+            MagicMock(returncode=1),  # apt install fails
+        ]
+
+        checks = [
+            DependencyCheck(
+                "Test", CheckStatus.FAIL, "Missing", "System",
+                fix_command="sudo apt install testpkg"
+            )
+        ]
+
+        success, message = apply_fixes(checks, "apt", skip_confirm=True)
+
+        self.assertFalse(success)
+        self.assertIn("exit code 1", message)
+
+
+class TestApplyFixesWithOtherCommands(unittest.TestCase):
+    """Tests for apply_fixes success with other commands (lines 2512-2515)."""
+
+    @patch('subprocess.run')
+    @patch('builtins.print')
+    def test_apply_fixes_success_with_other_commands(self, mock_print, mock_run):
+        """Test apply_fixes shows manual action note (lines 2512-2515)."""
+        from steam_proton_helper import apply_fixes, DependencyCheck, CheckStatus
+
+        # Mock subprocess to return success for both apt update and install
+        mock_run.return_value = MagicMock(returncode=0)
+
+        checks = [
+            DependencyCheck(
+                "Package", CheckStatus.FAIL, "Missing", "System",
+                fix_command="sudo apt install testpkg"
+            ),
+            DependencyCheck(
+                "Groups", CheckStatus.WARNING, "Not in group", "Permissions",
+                fix_command="usermod -aG video $USER"
+            ),
+        ]
+
+        success, message = apply_fixes(checks, "apt", skip_confirm=True)
+
+        self.assertTrue(success)
+        # Check print was called with manual actions note
+        calls = [str(c) for c in mock_print.call_args_list]
+        self.assertTrue(any("manual actions" in c.lower() for c in calls))
+
+
+class TestApplyFixesException(unittest.TestCase):
+    """Tests for apply_fixes generic exception (lines 2525-2526)."""
+
+    @patch('subprocess.run')
+    @patch('builtins.print')
+    def test_apply_fixes_generic_exception(self, mock_print, mock_run):
+        """Test apply_fixes handles generic exception (lines 2525-2526)."""
+        from steam_proton_helper import apply_fixes, DependencyCheck, CheckStatus
+
+        mock_run.side_effect = RuntimeError("Something went wrong")
+
+        checks = [
+            DependencyCheck(
+                "Test", CheckStatus.FAIL, "Missing", "System",
+                fix_command="sudo apt install testpkg"
+            )
+        ]
+
+        success, message = apply_fixes(checks, "apt", skip_confirm=True)
+
+        self.assertFalse(success)
+        self.assertIn("Error during installation", message)
+
+
+class TestInstallProtonKeyboardInterrupt(unittest.TestCase):
+    """Tests for --install-proton KeyboardInterrupt (lines 2853-2854)."""
+
+    def test_install_proton_keyboard_interrupt(self):
+        """Test --install-proton handles Ctrl-C (lines 2853-2854)."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--install-proton', 'latest']):
+            with patch('steam_proton_helper.install_ge_proton') as mock_install:
+                mock_install.side_effect = KeyboardInterrupt()
+                with patch('sys.stdout', new_callable=io.StringIO):
+                    result = main()
+
+        self.assertEqual(result, 130)
+
+
+class TestUpdateProtonKeyboardInterrupt(unittest.TestCase):
+    """Tests for --update-proton KeyboardInterrupt (lines 2953-2954)."""
+
+    def test_update_proton_keyboard_interrupt(self):
+        """Test --update-proton handles Ctrl-C (lines 2953-2954)."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--update-proton']):
+            with patch('steam_proton_helper.update_ge_proton') as mock_update:
+                mock_update.side_effect = KeyboardInterrupt()
+                with patch('sys.stdout', new_callable=io.StringIO):
+                    result = main()
+
+        self.assertEqual(result, 130)
+
+
+class TestListProtonVerbose(unittest.TestCase):
+    """Tests for --list-proton verbose output (lines 2769, 2778)."""
+
+    def test_list_proton_verbose_shows_paths(self):
+        """Test --list-proton --verbose shows paths (lines 2769, 2778)."""
+        import io
+        from steam_proton_helper import main, ProtonInstall
+
+        with patch('sys.argv', ['steam-proton-helper', '--list-proton', '--verbose']):
+            with patch('steam_proton_helper.detect_steam_variant', return_value=('native', '/home/user/.steam')):
+                with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                    with patch('steam_proton_helper.find_proton_installations') as mock_find:
+                        mock_find.return_value = [
+                            ProtonInstall(
+                                name="Proton 8.0",
+                                path="/home/user/.steam/steam/steamapps/common/Proton 8.0",
+                                has_executable=True,
+                                has_toolmanifest=True,
+                                has_version=True
+                            ),
+                            ProtonInstall(
+                                name="GE-Proton9-2",
+                                path="/home/user/.steam/root/compatibilitytools.d/GE-Proton9-2",
+                                has_executable=True,
+                                has_toolmanifest=True,
+                                has_version=True
+                            )
+                        ]
+                        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                            result = main()
+                            output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        # Verbose shows full paths
+        self.assertIn("Proton 8.0", output)
+        self.assertIn("compatibilitytools.d", output)
+
+
+class TestInstallProtonListReleaseFail(unittest.TestCase):
+    """Tests for --install-proton list when releases fail (line 2802)."""
+
+    def test_install_proton_list_releases_fail_json(self):
+        """Test --install-proton list JSON when fetch fails (line 2802)."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--install-proton', 'list', '--json']):
+            with patch('steam_proton_helper.fetch_ge_proton_releases', return_value=[]):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        data = json.loads(output)
+        self.assertIn('error', data)
+
+
+class TestRemoveProtonVerbose(unittest.TestCase):
+    """Tests for --remove-proton list verbose (line 2883)."""
+
+    def test_remove_proton_list_verbose(self):
+        """Test --remove-proton list --verbose shows paths (line 2883)."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--remove-proton', 'list', '--verbose']):
+            with patch('steam_proton_helper.get_removable_proton_versions') as mock_get:
+                mock_get.return_value = [
+                    ("GE-Proton9-2", "/home/user/.steam/root/compatibilitytools.d/GE-Proton9-2")
+                ]
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("GE-Proton9-2", output)
+        self.assertIn("compatibilitytools.d", output)
+
+
+class TestGameNotInProtonDBJson(unittest.TestCase):
+    """Tests for --game not in ProtonDB with JSON output (line 3037)."""
+
+    def test_game_not_in_protondb_json(self):
+        """Test --game JSON output when game not in ProtonDB (line 3037)."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--game', '12345', '--json']):
+            with patch('steam_proton_helper.resolve_game_input') as mock_resolve:
+                mock_resolve.return_value = ('12345', 'Test Game', [])
+                with patch('steam_proton_helper.fetch_protondb_info', return_value=None):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        data = json.loads(output)
+        self.assertIn('errors', data)
+        self.assertEqual(len(data['errors']), 1)
+        self.assertEqual(data['errors'][0]['error'], 'not_in_protondb')
+
+
+class TestFetchProtonDBHTTPError(unittest.TestCase):
+    """Tests for fetch_protondb_info HTTPError handling (line 1400)."""
+
+    def test_fetch_protondb_http_error_non_404(self):
+        """Test fetch_protondb_info re-raises non-404 HTTPError (line 1400)."""
+        from steam_proton_helper import fetch_protondb_info
+        import urllib.error
+
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            # Simulate a 500 server error
+            http_error = urllib.error.HTTPError(
+                url='http://example.com',
+                code=500,
+                msg='Internal Server Error',
+                hdrs={},
+                fp=None
+            )
+            mock_urlopen.side_effect = http_error
+
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                fetch_protondb_info('12345')
+
+            self.assertEqual(ctx.exception.code, 500)
+
+
+class TestGetProtonInstallDirBranches(unittest.TestCase):
+    """Tests for get_proton_install_dir branches (lines 1624, 1629)."""
+
+    @patch('os.makedirs')
+    @patch('os.path.exists')
+    @patch('os.path.isdir')
+    def test_get_proton_install_dir_creates_directory(self, mock_isdir, mock_exists, mock_makedirs):
+        """Test get_proton_install_dir creates directory when parent exists (line 1624)."""
+        from steam_proton_helper import get_proton_install_dir
+
+        # Setup: parent exists, compatibilitytools.d doesn't exist
+        def isdir_side_effect(path):
+            if 'compatibilitytools.d' in path:
+                return False
+            return True  # Parent exists
+
+        mock_isdir.side_effect = isdir_side_effect
+        mock_exists.return_value = False  # Directory doesn't exist yet
+
+        result = get_proton_install_dir()
+
+        # Should have tried to create the directory
+        self.assertTrue(mock_makedirs.called)
+
+    @patch('os.path.isdir')
+    def test_get_proton_install_dir_no_valid_path(self, mock_isdir):
+        """Test get_proton_install_dir returns None when no valid path (line 1629)."""
+        from steam_proton_helper import get_proton_install_dir
+
+        # No directories exist
+        mock_isdir.return_value = False
+
+        result = get_proton_install_dir()
+
+        self.assertIsNone(result)
+
+
+class TestInstallProtonListNotInstalled(unittest.TestCase):
+    """Tests for --install-proton list with non-installed releases (line 2835)."""
+
+    def test_install_proton_list_shows_not_installed(self):
+        """Test --install-proton list shows releases not installed (line 2835)."""
+        import io
+        from steam_proton_helper import main, GEProtonRelease, ProtonInstall
+
+        with patch('sys.argv', ['steam-proton-helper', '--install-proton', 'list']):
+            with patch('steam_proton_helper.fetch_ge_proton_releases') as mock_fetch:
+                mock_fetch.return_value = [
+                    GEProtonRelease(
+                        tag_name="GE-Proton9-5",
+                        name="GE-Proton9-5",
+                        download_url="http://example.com/ge.tar.gz",
+                        size_bytes=500 * 1024 * 1024,
+                        published_at="2024-01-15"
+                    ),
+                    GEProtonRelease(
+                        tag_name="GE-Proton9-4",
+                        name="GE-Proton9-4",
+                        download_url="http://example.com/ge.tar.gz",
+                        size_bytes=480 * 1024 * 1024,
+                        published_at="2024-01-10"
+                    ),
+                ]
+                with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                    with patch('steam_proton_helper.find_proton_installations') as mock_find:
+                        # Only one version installed
+                        mock_find.return_value = [
+                            ProtonInstall(
+                                name="GE-Proton9-5",
+                                path="/path/to/ge",
+                                has_executable=True,
+                                has_toolmanifest=True,
+                                has_version=True
+                            )
+                        ]
+                        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                            result = main()
+                            output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        # GE-Proton9-5 should show as installed
+        self.assertIn("GE-Proton9-5", output)
+        # GE-Proton9-4 should not show installed marker (line 2835 - empty status)
+        self.assertIn("GE-Proton9-4", output)
 
 
 if __name__ == '__main__':

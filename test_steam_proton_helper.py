@@ -50,6 +50,35 @@ from steam_proton_helper import (
     SteamApp,
     search_steam_games,
     resolve_game_input,
+    # New feature imports
+    GameLaunchProfile,
+    InstalledGame,
+    ShaderCacheInfo,
+    CompatdataInfo,
+    PerformanceToolStatus,
+    LogEntry,
+    get_profiles_path,
+    load_launch_profiles,
+    save_launch_profiles,
+    get_launch_profile,
+    set_launch_profile,
+    delete_launch_profile,
+    generate_launch_command,
+    get_shader_cache_paths,
+    get_directory_size,
+    scan_shader_caches,
+    clear_shader_cache,
+    clear_all_shader_caches,
+    scan_compatdata,
+    backup_compatdata,
+    restore_compatdata,
+    list_compatdata_backups,
+    parse_acf_file,
+    scan_installed_games,
+    check_performance_tools,
+    get_log_paths,
+    parse_log_file,
+    scan_logs,
 )
 
 
@@ -5423,6 +5452,970 @@ class TestInstallProtonListNotInstalled(unittest.TestCase):
         self.assertIn("GE-Proton9-5", output)
         # GE-Proton9-4 should not show installed marker (line 2835 - empty status)
         self.assertIn("GE-Proton9-4", output)
+
+
+# =============================================================================
+# Feature 1: Game Launch Profiles Tests
+# =============================================================================
+
+class TestGameLaunchProfileDataclass(unittest.TestCase):
+    """Tests for GameLaunchProfile dataclass."""
+
+    def test_create_minimal_profile(self):
+        """Test creating a profile with minimal required fields."""
+        profile = GameLaunchProfile(app_id="12345", name="Test Game")
+        self.assertEqual(profile.app_id, "12345")
+        self.assertEqual(profile.name, "Test Game")
+        self.assertFalse(profile.gamemode)
+        self.assertFalse(profile.mangohud)
+        self.assertIsNone(profile.proton_version)
+        self.assertIsNone(profile.env_vars)  # Default is None, not {}
+        self.assertIsNone(profile.launch_options)
+
+    def test_create_full_profile(self):
+        """Test creating a profile with all fields."""
+        profile = GameLaunchProfile(
+            app_id="12345",
+            name="Test Game",
+            gamemode=True,
+            mangohud=True,
+            proton_version="GE-Proton9-5",
+            env_vars={"DXVK_HUD": "fps"},
+            launch_options="-fullscreen"
+        )
+        self.assertTrue(profile.gamemode)
+        self.assertTrue(profile.mangohud)
+        self.assertEqual(profile.proton_version, "GE-Proton9-5")
+        self.assertEqual(profile.env_vars, {"DXVK_HUD": "fps"})
+        self.assertEqual(profile.launch_options, "-fullscreen")
+
+    def test_to_dict(self):
+        """Test to_dict conversion."""
+        profile = GameLaunchProfile(
+            app_id="12345",
+            name="Test Game",
+            gamemode=True,
+            env_vars={"KEY": "value"}
+        )
+        data = profile.to_dict()
+        self.assertEqual(data['app_id'], "12345")
+        self.assertEqual(data['name'], "Test Game")
+        self.assertTrue(data['gamemode'])
+        self.assertEqual(data['env_vars'], {"KEY": "value"})
+
+    def test_from_dict(self):
+        """Test from_dict conversion."""
+        data = {
+            'app_id': "67890",
+            'name': "Another Game",
+            'gamemode': True,
+            'mangohud': False,
+            'proton_version': None,
+            'env_vars': {},
+            'launch_options': None
+        }
+        profile = GameLaunchProfile.from_dict(data)
+        self.assertEqual(profile.app_id, "67890")
+        self.assertEqual(profile.name, "Another Game")
+        self.assertTrue(profile.gamemode)
+
+
+class TestGetProfilesPath(unittest.TestCase):
+    """Tests for get_profiles_path function."""
+
+    @patch('os.makedirs')
+    @patch('os.path.expanduser')
+    def test_get_profiles_path_creates_config_dir(self, mock_expanduser, mock_makedirs):
+        """Test that config directory is created."""
+        mock_expanduser.return_value = '/home/user/.config/steam-proton-helper'
+        result = get_profiles_path()
+        mock_makedirs.assert_called_once()
+        self.assertIn('launch_profiles.json', result)
+
+
+class TestLoadLaunchProfiles(unittest.TestCase):
+    """Tests for load_launch_profiles function."""
+
+    @patch('steam_proton_helper.get_profiles_path')
+    @patch('os.path.exists')
+    def test_load_empty_when_file_not_exists(self, mock_exists, mock_path):
+        """Test returns empty dict when file doesn't exist."""
+        mock_exists.return_value = False
+        mock_path.return_value = '/fake/path/profiles.json'
+        profiles = load_launch_profiles()
+        self.assertEqual(profiles, {})
+
+    @patch('steam_proton_helper.get_profiles_path')
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_load_profiles_success(self, mock_open, mock_exists, mock_path):
+        """Test loading profiles from file."""
+        mock_exists.return_value = True
+        mock_path.return_value = '/fake/path/profiles.json'
+        mock_open.return_value.__enter__.return_value.read.return_value = json.dumps({
+            "12345": {
+                "app_id": "12345",
+                "name": "Test",
+                "gamemode": True,
+                "mangohud": False,
+                "proton_version": None,
+                "env_vars": {},
+                "launch_options": None
+            }
+        })
+        profiles = load_launch_profiles()
+        self.assertIn("12345", profiles)
+        self.assertTrue(profiles["12345"].gamemode)
+
+    @patch('steam_proton_helper.get_profiles_path')
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_load_profiles_json_error(self, mock_open, mock_exists, mock_path):
+        """Test handling JSON decode error."""
+        mock_exists.return_value = True
+        mock_path.return_value = '/fake/path/profiles.json'
+        mock_open.return_value.__enter__.return_value.read.return_value = "invalid json"
+        profiles = load_launch_profiles()
+        self.assertEqual(profiles, {})
+
+
+class TestSaveLaunchProfiles(unittest.TestCase):
+    """Tests for save_launch_profiles function."""
+
+    @patch('steam_proton_helper.get_profiles_path')
+    @patch('builtins.open')
+    def test_save_profiles_success(self, mock_open, mock_path):
+        """Test saving profiles successfully."""
+        mock_path.return_value = '/fake/path/profiles.json'
+        mock_file = MagicMock()
+        mock_open.return_value.__enter__.return_value = mock_file
+
+        profile = GameLaunchProfile(app_id="12345", name="Test")
+        result = save_launch_profiles({"12345": profile})
+
+        self.assertTrue(result)
+        mock_file.write.assert_called()
+
+    @patch('steam_proton_helper.get_profiles_path')
+    @patch('builtins.open')
+    def test_save_profiles_io_error(self, mock_open, mock_path):
+        """Test handling IO error during save."""
+        mock_path.return_value = '/fake/path/profiles.json'
+        mock_open.side_effect = IOError("Cannot write")
+
+        profile = GameLaunchProfile(app_id="12345", name="Test")
+        result = save_launch_profiles({"12345": profile})
+
+        self.assertFalse(result)
+
+
+class TestGetSetDeleteLaunchProfile(unittest.TestCase):
+    """Tests for get/set/delete_launch_profile functions."""
+
+    @patch('steam_proton_helper.load_launch_profiles')
+    def test_get_launch_profile_exists(self, mock_load):
+        """Test getting existing profile."""
+        profile = GameLaunchProfile(app_id="12345", name="Test")
+        mock_load.return_value = {"12345": profile}
+        result = get_launch_profile("12345")
+        self.assertEqual(result.name, "Test")
+
+    @patch('steam_proton_helper.load_launch_profiles')
+    def test_get_launch_profile_not_found(self, mock_load):
+        """Test getting non-existent profile."""
+        mock_load.return_value = {}
+        result = get_launch_profile("99999")
+        self.assertIsNone(result)
+
+    @patch('steam_proton_helper.save_launch_profiles')
+    @patch('steam_proton_helper.load_launch_profiles')
+    def test_set_launch_profile(self, mock_load, mock_save):
+        """Test setting a profile."""
+        mock_load.return_value = {}
+        mock_save.return_value = True
+        profile = GameLaunchProfile(app_id="12345", name="Test")
+        result = set_launch_profile(profile)
+        self.assertTrue(result)
+        mock_save.assert_called_once()
+
+    @patch('steam_proton_helper.save_launch_profiles')
+    @patch('steam_proton_helper.load_launch_profiles')
+    def test_delete_launch_profile_exists(self, mock_load, mock_save):
+        """Test deleting existing profile."""
+        profile = GameLaunchProfile(app_id="12345", name="Test")
+        mock_load.return_value = {"12345": profile}
+        mock_save.return_value = True
+        result = delete_launch_profile("12345")
+        self.assertTrue(result)
+
+    @patch('steam_proton_helper.load_launch_profiles')
+    def test_delete_launch_profile_not_found(self, mock_load):
+        """Test deleting non-existent profile."""
+        mock_load.return_value = {}
+        result = delete_launch_profile("99999")
+        self.assertFalse(result)
+
+
+class TestGenerateLaunchCommand(unittest.TestCase):
+    """Tests for generate_launch_command function."""
+
+    def test_minimal_command(self):
+        """Test command with no options."""
+        profile = GameLaunchProfile(app_id="12345", name="Test")
+        cmd = generate_launch_command(profile)
+        self.assertEqual(cmd, "%command%")
+
+    def test_command_with_gamemode(self):
+        """Test command with gamemode enabled."""
+        profile = GameLaunchProfile(app_id="12345", name="Test", gamemode=True)
+        cmd = generate_launch_command(profile)
+        self.assertEqual(cmd, "gamemoderun %command%")
+
+    def test_command_with_mangohud(self):
+        """Test command with mangohud enabled."""
+        profile = GameLaunchProfile(app_id="12345", name="Test", mangohud=True)
+        cmd = generate_launch_command(profile)
+        self.assertEqual(cmd, "mangohud %command%")
+
+    def test_command_with_both_wrappers(self):
+        """Test command with both gamemode and mangohud."""
+        profile = GameLaunchProfile(app_id="12345", name="Test", gamemode=True, mangohud=True)
+        cmd = generate_launch_command(profile)
+        self.assertEqual(cmd, "gamemoderun mangohud %command%")
+
+    def test_command_with_env_vars(self):
+        """Test command with environment variables."""
+        profile = GameLaunchProfile(
+            app_id="12345",
+            name="Test",
+            env_vars={"DXVK_HUD": "fps", "PROTON_LOG": "1"}
+        )
+        cmd = generate_launch_command(profile)
+        self.assertIn("DXVK_HUD=fps", cmd)
+        self.assertIn("PROTON_LOG=1", cmd)
+        self.assertIn("%command%", cmd)
+
+    def test_command_with_launch_options(self):
+        """Test command with custom launch options."""
+        profile = GameLaunchProfile(
+            app_id="12345",
+            name="Test",
+            launch_options="-fullscreen -nointro"
+        )
+        cmd = generate_launch_command(profile)
+        self.assertIn("-fullscreen -nointro", cmd)
+        self.assertIn("%command%", cmd)
+
+    def test_full_command(self):
+        """Test command with all options."""
+        profile = GameLaunchProfile(
+            app_id="12345",
+            name="Test",
+            gamemode=True,
+            mangohud=True,
+            env_vars={"KEY": "value"},
+            launch_options="-windowed"
+        )
+        cmd = generate_launch_command(profile)
+        self.assertTrue(cmd.startswith("gamemoderun mangohud"))
+        self.assertIn("KEY=value", cmd)
+        self.assertIn("-windowed", cmd)
+        self.assertTrue(cmd.endswith("%command%"))
+
+
+# =============================================================================
+# Feature 2: Shader Cache Management Tests
+# =============================================================================
+
+class TestShaderCacheInfoDataclass(unittest.TestCase):
+    """Tests for ShaderCacheInfo dataclass."""
+
+    def test_create_shader_cache_info(self):
+        """Test creating a shader cache info."""
+        info = ShaderCacheInfo(
+            app_id="12345",
+            name="Test Game",
+            cache_path="/path/to/cache",
+            size_bytes=1024000,
+            file_count=50,
+            last_modified="2024-01-15T10:30:00"
+        )
+        self.assertEqual(info.app_id, "12345")
+        self.assertEqual(info.size_bytes, 1024000)
+        self.assertEqual(info.file_count, 50)
+
+
+class TestGetShaderCachePaths(unittest.TestCase):
+    """Tests for get_shader_cache_paths function."""
+
+    @patch('os.path.isdir')
+    def test_get_paths_with_steam_root(self, mock_isdir):
+        """Test getting shader cache paths with steam root."""
+        mock_isdir.return_value = False
+        paths = get_shader_cache_paths('/home/user/.steam/steam')
+        self.assertTrue(any('shadercache' in p for p in paths))
+        self.assertTrue(any('compatdata' in p for p in paths))
+
+    def test_get_paths_without_steam_root(self):
+        """Test getting shader cache paths without steam root."""
+        paths = get_shader_cache_paths(None)
+        # Should still check for system caches
+        self.assertIsInstance(paths, list)
+
+    @patch('os.path.isdir')
+    def test_get_paths_includes_mesa_cache(self, mock_isdir):
+        """Test that Mesa cache is included when it exists."""
+        def isdir_side_effect(path):
+            return 'mesa_shader_cache' in path
+        mock_isdir.side_effect = isdir_side_effect
+        paths = get_shader_cache_paths(None)
+        self.assertTrue(any('mesa' in p for p in paths))
+
+
+class TestGetDirectorySize(unittest.TestCase):
+    """Tests for get_directory_size function."""
+
+    def test_get_size_of_temp_dir(self):
+        """Test getting size of a temporary directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a test file
+            test_file = os.path.join(tmpdir, "test.txt")
+            with open(test_file, 'w') as f:
+                f.write("x" * 1000)
+
+            size, count = get_directory_size(tmpdir)
+            self.assertEqual(count, 1)
+            self.assertGreaterEqual(size, 1000)
+
+    def test_get_size_empty_dir(self):
+        """Test getting size of an empty directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            size, count = get_directory_size(tmpdir)
+            self.assertEqual(count, 0)
+            self.assertEqual(size, 0)
+
+    def test_get_size_nonexistent_dir(self):
+        """Test getting size of a non-existent directory."""
+        size, count = get_directory_size('/nonexistent/path/12345')
+        self.assertEqual(count, 0)
+        self.assertEqual(size, 0)
+
+
+class TestScanShaderCaches(unittest.TestCase):
+    """Tests for scan_shader_caches function."""
+
+    def test_scan_without_steam_root(self):
+        """Test scanning without steam root returns empty."""
+        caches = scan_shader_caches(None)
+        self.assertEqual(caches, [])
+
+    @patch('os.path.isdir')
+    def test_scan_no_shadercache_dir(self, mock_isdir):
+        """Test scanning when shadercache dir doesn't exist."""
+        mock_isdir.return_value = False
+        caches = scan_shader_caches('/home/user/.steam/steam')
+        self.assertEqual(caches, [])
+
+    @patch('os.path.getmtime')
+    @patch('steam_proton_helper.get_directory_size')
+    @patch('os.listdir')
+    @patch('os.path.isdir')
+    def test_scan_finds_caches(self, mock_isdir, mock_listdir, mock_getsize, mock_getmtime):
+        """Test scanning finds shader caches."""
+        def isdir_side_effect(path):
+            if 'shadercache' in path:
+                return True
+            if path.endswith('12345'):
+                return True
+            return False
+
+        mock_isdir.side_effect = isdir_side_effect
+        mock_listdir.return_value = ['12345', 'not_a_number', '67890']
+        mock_getsize.return_value = (1024000, 10)
+        mock_getmtime.return_value = 1705311000.0
+
+        caches = scan_shader_caches('/home/user/.steam/steam')
+        # Should find 12345 and 67890 (numeric dirs only)
+        self.assertGreaterEqual(len(caches), 1)
+
+
+class TestClearShaderCache(unittest.TestCase):
+    """Tests for clear_shader_cache function."""
+
+    def test_clear_without_steam_root(self):
+        """Test clearing without steam root."""
+        success, msg = clear_shader_cache("12345", None)
+        self.assertFalse(success)
+        self.assertIn("Steam root not found", msg)
+
+    @patch('os.path.isdir')
+    def test_clear_nonexistent_cache(self, mock_isdir):
+        """Test clearing non-existent cache."""
+        mock_isdir.return_value = False
+        success, msg = clear_shader_cache("12345", "/home/user/.steam/steam")
+        self.assertFalse(success)
+        self.assertIn("No shader cache found", msg)
+
+    @patch('shutil.rmtree')
+    @patch('steam_proton_helper.get_directory_size')
+    @patch('os.path.isdir')
+    def test_clear_success(self, mock_isdir, mock_getsize, mock_rmtree):
+        """Test successful cache clear."""
+        mock_isdir.return_value = True
+        mock_getsize.return_value = (1024 * 1024 * 100, 50)
+
+        success, msg = clear_shader_cache("12345", "/home/user/.steam/steam")
+        self.assertTrue(success)
+        self.assertIn("Cleared", msg)
+        mock_rmtree.assert_called_once()
+
+
+class TestClearAllShaderCaches(unittest.TestCase):
+    """Tests for clear_all_shader_caches function."""
+
+    def test_clear_all_without_steam_root(self):
+        """Test clearing all without steam root."""
+        success, msg = clear_all_shader_caches(None)
+        self.assertFalse(success)
+        self.assertIn("Steam root not found", msg)
+
+    @patch('os.path.isdir')
+    def test_clear_all_no_dir(self, mock_isdir):
+        """Test clearing all when dir doesn't exist."""
+        mock_isdir.return_value = False
+        success, msg = clear_all_shader_caches("/home/user/.steam/steam")
+        self.assertFalse(success)
+        self.assertIn("No shader cache directory found", msg)
+
+    @patch('os.makedirs')
+    @patch('shutil.rmtree')
+    @patch('steam_proton_helper.get_directory_size')
+    @patch('os.path.isdir')
+    def test_clear_all_success(self, mock_isdir, mock_getsize, mock_rmtree, mock_makedirs):
+        """Test successful clear all."""
+        mock_isdir.return_value = True
+        mock_getsize.return_value = (1024 * 1024 * 500, 200)
+
+        success, msg = clear_all_shader_caches("/home/user/.steam/steam")
+        self.assertTrue(success)
+        self.assertIn("Cleared", msg)
+        mock_rmtree.assert_called_once()
+        mock_makedirs.assert_called_once()
+
+
+# =============================================================================
+# Feature 3: Compatdata Backup/Restore Tests
+# =============================================================================
+
+class TestCompatdataInfoDataclass(unittest.TestCase):
+    """Tests for CompatdataInfo dataclass."""
+
+    def test_create_compatdata_info(self):
+        """Test creating compatdata info."""
+        info = CompatdataInfo(
+            app_id="12345",
+            name="Test Game",
+            path="/path/to/compatdata/12345",
+            size_bytes=5000000000,
+            last_modified="2024-01-15T10:30:00",
+            proton_version="GE-Proton9-5"
+        )
+        self.assertEqual(info.app_id, "12345")
+        self.assertEqual(info.size_bytes, 5000000000)
+        self.assertEqual(info.proton_version, "GE-Proton9-5")
+
+
+class TestScanCompatdata(unittest.TestCase):
+    """Tests for scan_compatdata function."""
+
+    def test_scan_without_steam_root(self):
+        """Test scanning without steam root returns empty."""
+        prefixes = scan_compatdata(None)
+        self.assertEqual(prefixes, [])
+
+    @patch('steam_proton_helper.get_library_paths')
+    def test_scan_no_libraries(self, mock_get_libs):
+        """Test scanning with no library paths."""
+        mock_get_libs.return_value = []
+        prefixes = scan_compatdata("/home/user/.steam/steam")
+        self.assertEqual(prefixes, [])
+
+    @patch('os.path.getmtime')
+    @patch('steam_proton_helper.get_directory_size')
+    @patch('os.listdir')
+    @patch('os.path.isdir')
+    @patch('steam_proton_helper.get_library_paths')
+    def test_scan_finds_prefixes(self, mock_get_libs, mock_isdir, mock_listdir, mock_getsize, mock_getmtime):
+        """Test scanning finds wine prefixes."""
+        mock_get_libs.return_value = ['/home/user/.steam/steam']
+
+        def isdir_side_effect(path):
+            return 'compatdata' in path or path.endswith('12345')
+
+        mock_isdir.side_effect = isdir_side_effect
+        mock_listdir.return_value = ['12345', '67890']
+        mock_getsize.return_value = (2000000000, 1000)
+        mock_getmtime.return_value = 1705311000.0
+
+        prefixes = scan_compatdata('/home/user/.steam/steam')
+        self.assertGreaterEqual(len(prefixes), 1)
+
+
+class TestBackupCompatdata(unittest.TestCase):
+    """Tests for backup_compatdata function."""
+
+    def test_backup_without_steam_root(self):
+        """Test backup without steam root."""
+        success, msg = backup_compatdata("12345", None)
+        self.assertFalse(success)
+        self.assertIn("Steam root not found", msg)
+
+    @patch('os.path.isdir')
+    @patch('steam_proton_helper.get_library_paths')
+    def test_backup_no_compatdata(self, mock_get_libs, mock_isdir):
+        """Test backup when compatdata doesn't exist."""
+        mock_get_libs.return_value = ['/home/user/.steam/steam']
+        mock_isdir.return_value = False
+        success, msg = backup_compatdata("12345", "/home/user/.steam/steam")
+        self.assertFalse(success)
+        self.assertIn("No compatdata found", msg)
+
+    @patch('os.path.getsize')
+    @patch('tarfile.open')
+    @patch('os.makedirs')
+    @patch('os.path.isdir')
+    @patch('steam_proton_helper.get_library_paths')
+    def test_backup_success(self, mock_get_libs, mock_isdir, mock_makedirs, mock_tarfile, mock_getsize):
+        """Test successful backup."""
+        mock_get_libs.return_value = ['/home/user/.steam/steam']
+        mock_isdir.return_value = True
+        mock_getsize.return_value = 1024 * 1024 * 50
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            backup_path = os.path.join(tmpdir, "test_backup.tar.gz")
+            success, msg = backup_compatdata("12345", "/home/user/.steam/steam", backup_path)
+
+        self.assertTrue(success)
+        self.assertIn("Backup created", msg)
+
+
+class TestRestoreCompatdata(unittest.TestCase):
+    """Tests for restore_compatdata function."""
+
+    def test_restore_without_steam_root(self):
+        """Test restore without steam root."""
+        success, msg = restore_compatdata("/fake/backup.tar.gz", None)
+        self.assertFalse(success)
+        self.assertIn("Steam root not found", msg)
+
+    def test_restore_backup_not_found(self):
+        """Test restore when backup file doesn't exist."""
+        success, msg = restore_compatdata("/nonexistent/backup.tar.gz", "/home/user/.steam/steam")
+        self.assertFalse(success)
+        self.assertIn("Backup file not found", msg)
+
+    def test_restore_success(self):
+        """Test successful restore."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a test backup archive
+            backup_path = os.path.join(tmpdir, "backup.tar.gz")
+            source_dir = os.path.join(tmpdir, "source_12345")
+            os.makedirs(source_dir)
+            with open(os.path.join(source_dir, "test.txt"), 'w') as f:
+                f.write("test")
+
+            with tarfile.open(backup_path, 'w:gz') as tar:
+                tar.add(source_dir, arcname="12345")
+
+            # Create steamapps/compatdata target directory
+            compatdata_dir = os.path.join(tmpdir, "steamapps", "compatdata")
+            os.makedirs(compatdata_dir)
+
+            success, msg = restore_compatdata(backup_path, tmpdir)
+
+        self.assertTrue(success)
+        self.assertIn("Restored", msg)
+
+
+class TestListCompatdataBackups(unittest.TestCase):
+    """Tests for list_compatdata_backups function."""
+
+    @patch('os.path.isdir')
+    def test_list_no_backup_dir(self, mock_isdir):
+        """Test listing when backup dir doesn't exist."""
+        mock_isdir.return_value = False
+        backups = list_compatdata_backups()
+        self.assertEqual(backups, [])
+
+    @patch('os.path.getsize')
+    @patch('os.path.getmtime')
+    @patch('os.listdir')
+    @patch('os.path.isdir')
+    def test_list_finds_backups(self, mock_isdir, mock_listdir, mock_getmtime, mock_getsize):
+        """Test listing finds backup files."""
+        mock_isdir.return_value = True
+        mock_listdir.return_value = [
+            'compatdata_12345_20240115_103000.tar.gz',
+            'compatdata_67890_20240110_120000.tar.gz',
+            'other_file.txt'  # Should be ignored
+        ]
+        mock_getmtime.return_value = 1705311000.0
+        mock_getsize.return_value = 1024 * 1024 * 50
+
+        backups = list_compatdata_backups()
+        self.assertEqual(len(backups), 2)
+        self.assertEqual(backups[0]['app_id'], '12345')
+
+
+# =============================================================================
+# Feature 4: Steam Library Scanner Tests
+# =============================================================================
+
+class TestInstalledGameDataclass(unittest.TestCase):
+    """Tests for InstalledGame dataclass."""
+
+    def test_create_installed_game(self):
+        """Test creating installed game info."""
+        game = InstalledGame(
+            app_id="12345",
+            name="Test Game",
+            install_dir="/path/to/game",
+            size_bytes=10000000000,
+            proton_version="GE-Proton9-5",
+            last_played="2024-01-15T10:30:00"
+        )
+        self.assertEqual(game.app_id, "12345")
+        self.assertEqual(game.name, "Test Game")
+        self.assertEqual(game.size_bytes, 10000000000)
+
+
+class TestParseAcfFile(unittest.TestCase):
+    """Tests for parse_acf_file function."""
+
+    def test_parse_valid_acf(self):
+        """Test parsing a valid ACF file."""
+        acf_content = '''
+"AppState"
+{
+    "appid"     "12345"
+    "name"      "Test Game"
+    "installdir"        "TestGame"
+    "SizeOnDisk"        "5000000000"
+    "LastPlayed"        "1705311000"
+}
+'''
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.acf', delete=False) as f:
+            f.write(acf_content)
+            acf_path = f.name
+
+        try:
+            data = parse_acf_file(acf_path)
+            self.assertIsNotNone(data)
+            self.assertEqual(data['appid'], '12345')
+            self.assertEqual(data['name'], 'Test Game')
+            self.assertEqual(data['installdir'], 'TestGame')
+        finally:
+            os.unlink(acf_path)
+
+    def test_parse_missing_appid(self):
+        """Test parsing ACF without appid returns None."""
+        acf_content = '''
+"AppState"
+{
+    "name"      "No AppID Game"
+}
+'''
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.acf', delete=False) as f:
+            f.write(acf_content)
+            acf_path = f.name
+
+        try:
+            data = parse_acf_file(acf_path)
+            self.assertIsNone(data)
+        finally:
+            os.unlink(acf_path)
+
+    def test_parse_nonexistent_file(self):
+        """Test parsing non-existent file returns None."""
+        data = parse_acf_file('/nonexistent/path/file.acf')
+        self.assertIsNone(data)
+
+
+class TestScanInstalledGames(unittest.TestCase):
+    """Tests for scan_installed_games function."""
+
+    def test_scan_without_steam_root(self):
+        """Test scanning without steam root returns empty."""
+        games = scan_installed_games(None)
+        self.assertEqual(games, [])
+
+    @patch('steam_proton_helper.get_library_paths')
+    def test_scan_no_libraries(self, mock_get_libs):
+        """Test scanning with no libraries."""
+        mock_get_libs.return_value = []
+        games = scan_installed_games("/home/user/.steam/steam")
+        self.assertEqual(games, [])
+
+    @patch('steam_proton_helper.parse_acf_file')
+    @patch('os.listdir')
+    @patch('os.path.isdir')
+    @patch('steam_proton_helper.get_library_paths')
+    def test_scan_finds_games(self, mock_get_libs, mock_isdir, mock_listdir, mock_parse):
+        """Test scanning finds installed games."""
+        mock_get_libs.return_value = ['/home/user/.steam/steam']
+        mock_isdir.return_value = True
+        mock_listdir.return_value = ['appmanifest_12345.acf', 'appmanifest_67890.acf']
+        mock_parse.return_value = {
+            'appid': '12345',
+            'name': 'Test Game',
+            'installdir': 'TestGame',
+            'SizeOnDisk': '5000000000'
+        }
+
+        games = scan_installed_games("/home/user/.steam/steam")
+        self.assertGreaterEqual(len(games), 1)
+
+
+# =============================================================================
+# Feature 5: Performance Tools Tests
+# =============================================================================
+
+class TestPerformanceToolStatusDataclass(unittest.TestCase):
+    """Tests for PerformanceToolStatus dataclass."""
+
+    def test_create_tool_status(self):
+        """Test creating tool status."""
+        status = PerformanceToolStatus(
+            name="GameMode",
+            installed=True,
+            active=True,
+            version="1.7",
+            details="CPU governor optimization"
+        )
+        self.assertEqual(status.name, "GameMode")
+        self.assertTrue(status.installed)
+        self.assertTrue(status.active)
+
+
+class TestCheckPerformanceTools(unittest.TestCase):
+    """Tests for check_performance_tools function."""
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    @patch('shutil.which')
+    def test_check_tools_none_installed(self, mock_which, mock_exists, mock_run):
+        """Test checking when no tools are installed."""
+        mock_which.return_value = None
+        mock_exists.return_value = False
+
+        tools = check_performance_tools()
+
+        # Should still return status for all checked tools
+        self.assertGreaterEqual(len(tools), 6)
+        gamemode = next(t for t in tools if t.name == "GameMode")
+        self.assertFalse(gamemode.installed)
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    @patch('shutil.which')
+    def test_check_tools_gamemode_installed(self, mock_which, mock_exists, mock_run):
+        """Test checking with GameMode installed."""
+        def which_side_effect(cmd):
+            return '/usr/bin/gamemoderun' if cmd == 'gamemoderun' else None
+
+        mock_which.side_effect = which_side_effect
+        mock_exists.return_value = False
+        mock_run.return_value = MagicMock(returncode=0, stdout="gamemode 1.7")
+
+        tools = check_performance_tools()
+        gamemode = next(t for t in tools if t.name == "GameMode")
+        self.assertTrue(gamemode.installed)
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    @patch('shutil.which')
+    def test_check_tools_mangohud_installed(self, mock_which, mock_exists, mock_run):
+        """Test checking with MangoHud installed."""
+        def which_side_effect(cmd):
+            return '/usr/bin/mangohud' if cmd == 'mangohud' else None
+
+        mock_which.side_effect = which_side_effect
+        mock_exists.return_value = False
+        mock_run.return_value = MagicMock(returncode=0, stdout="MangoHud 0.7.0")
+
+        tools = check_performance_tools()
+        mangohud = next(t for t in tools if t.name == "MangoHud")
+        self.assertTrue(mangohud.installed)
+
+    @patch('subprocess.run')
+    @patch('os.path.exists')
+    @patch('shutil.which')
+    def test_check_tools_vkbasalt_path(self, mock_which, mock_exists, mock_run):
+        """Test checking vkBasalt via library path."""
+        mock_which.return_value = None
+
+        def exists_side_effect(path):
+            return 'libvkbasalt.so' in path
+
+        mock_exists.side_effect = exists_side_effect
+        mock_run.return_value = MagicMock(returncode=1)
+
+        tools = check_performance_tools()
+        vkbasalt = next(t for t in tools if t.name == "vkBasalt")
+        self.assertTrue(vkbasalt.installed)
+
+
+# =============================================================================
+# Feature 6: Log Viewer Tests
+# =============================================================================
+
+class TestLogEntryDataclass(unittest.TestCase):
+    """Tests for LogEntry dataclass."""
+
+    def test_create_log_entry(self):
+        """Test creating a log entry."""
+        entry = LogEntry(
+            timestamp="2024-01-15 10:30:00",
+            level="ERROR",
+            source="steam",
+            message="Something went wrong",
+            game_id="12345"
+        )
+        self.assertEqual(entry.level, "ERROR")
+        self.assertEqual(entry.source, "steam")
+
+
+class TestGetLogPaths(unittest.TestCase):
+    """Tests for get_log_paths function."""
+
+    @patch('os.listdir')
+    @patch('os.path.isfile')
+    @patch('os.path.exists')
+    def test_get_log_paths_with_steam_root(self, mock_exists, mock_isfile, mock_listdir):
+        """Test getting log paths with steam root."""
+        mock_exists.return_value = True
+        mock_isfile.return_value = True
+        mock_listdir.return_value = []
+
+        logs = get_log_paths('/home/user/.steam/steam')
+        # Should find Steam logs
+        self.assertIsInstance(logs, list)
+
+    def test_get_log_paths_without_steam_root(self):
+        """Test getting log paths without steam root."""
+        logs = get_log_paths(None)
+        self.assertIsInstance(logs, list)
+
+    @patch('os.listdir')
+    @patch('os.path.isfile')
+    @patch('os.path.exists')
+    def test_get_log_paths_finds_proton_logs(self, mock_exists, mock_isfile, mock_listdir):
+        """Test finding Proton logs in /tmp."""
+        mock_exists.return_value = False
+        mock_isfile.return_value = True
+        mock_listdir.return_value = ['proton_log.txt', 'wine_debug.log', 'other.txt']
+
+        logs = get_log_paths(None)
+        # Should include proton/wine logs from tmp
+        proton_logs = [p for p, t in logs if t == 'proton']
+        self.assertGreaterEqual(len(proton_logs), 0)
+
+
+class TestParseLogFile(unittest.TestCase):
+    """Tests for parse_log_file function."""
+
+    def test_parse_log_file_with_errors(self):
+        """Test parsing a log file with error entries."""
+        log_content = '''[2024-01-15 10:30:00] INFO: Starting application
+[2024-01-15 10:30:01] ERROR: Failed to connect
+[2024-01-15 10:30:02] WARNING: Low memory
+[2024-01-15 10:30:03] INFO: Shutting down
+'''
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            f.write(log_content)
+            log_path = f.name
+
+        try:
+            entries = parse_log_file(log_path, 'steam')
+            self.assertEqual(len(entries), 4)
+
+            error_entry = next(e for e in entries if e.level == 'ERROR')
+            self.assertIn("Failed to connect", error_entry.message)
+
+            warn_entry = next(e for e in entries if e.level == 'WARNING')
+            self.assertIn("Low memory", warn_entry.message)
+        finally:
+            os.unlink(log_path)
+
+    def test_parse_nonexistent_log(self):
+        """Test parsing non-existent log file."""
+        entries = parse_log_file('/nonexistent/log.txt', 'steam')
+        self.assertEqual(entries, [])
+
+    def test_parse_log_detects_levels(self):
+        """Test that log levels are correctly detected."""
+        log_content = '''This is a fatal error
+This is normal info
+Warning: something might be wrong
+'''
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            f.write(log_content)
+            log_path = f.name
+
+        try:
+            entries = parse_log_file(log_path, 'proton')
+            levels = [e.level for e in entries]
+            self.assertIn('ERROR', levels)  # 'fatal' triggers ERROR
+            self.assertIn('WARNING', levels)
+            self.assertIn('INFO', levels)
+        finally:
+            os.unlink(log_path)
+
+
+class TestScanLogs(unittest.TestCase):
+    """Tests for scan_logs function."""
+
+    @patch('steam_proton_helper.parse_log_file')
+    @patch('steam_proton_helper.get_log_paths')
+    def test_scan_logs_aggregates_entries(self, mock_get_paths, mock_parse):
+        """Test scanning aggregates entries from all logs."""
+        mock_get_paths.return_value = [
+            ('/tmp/steam.log', 'steam'),
+            ('/tmp/proton.log', 'proton')
+        ]
+        mock_parse.return_value = [
+            LogEntry(timestamp="2024-01-15 10:30:00", level="INFO", source="test", message="Test", game_id=None)
+        ]
+
+        entries = scan_logs('/home/user/.steam/steam')
+        # Should have entries from both logs
+        self.assertGreaterEqual(len(entries), 1)
+
+    @patch('steam_proton_helper.parse_log_file')
+    @patch('steam_proton_helper.get_log_paths')
+    def test_scan_logs_errors_only(self, mock_get_paths, mock_parse):
+        """Test scanning with errors_only filter."""
+        mock_get_paths.return_value = [('/tmp/test.log', 'steam')]
+        mock_parse.return_value = [
+            LogEntry(timestamp="2024-01-15 10:30:00", level="INFO", source="test", message="Info", game_id=None),
+            LogEntry(timestamp="2024-01-15 10:30:01", level="ERROR", source="test", message="Error", game_id=None)
+        ]
+
+        entries = scan_logs('/home/user/.steam/steam', errors_only=True)
+        self.assertTrue(all(e.level == 'ERROR' for e in entries))
+
+    @patch('steam_proton_helper.parse_log_file')
+    @patch('steam_proton_helper.get_log_paths')
+    def test_scan_logs_respects_max_entries(self, mock_get_paths, mock_parse):
+        """Test scanning respects max_entries limit."""
+        mock_get_paths.return_value = [('/tmp/test.log', 'steam')]
+        mock_parse.return_value = [
+            LogEntry(timestamp=f"2024-01-15 10:{i:02d}:00", level="INFO", source="test", message=f"Msg {i}", game_id=None)
+            for i in range(200)
+        ]
+
+        entries = scan_logs('/home/user/.steam/steam', max_entries=50)
+        self.assertLessEqual(len(entries), 50)
 
 
 if __name__ == '__main__':

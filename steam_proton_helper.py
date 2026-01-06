@@ -6,7 +6,7 @@ This tool checks dependencies, validates installations, and reports system readi
 for Steam gaming. It does NOT install packages by default.
 """
 
-__version__ = "2.2.4"
+__version__ = "2.3.0"
 __author__ = "SteamProtonHelper Contributors"
 
 import argparse
@@ -72,6 +72,181 @@ class ProtonInstall:
     has_executable: bool
     has_toolmanifest: bool
     has_version: bool
+
+
+@dataclass
+class GameLaunchProfile:
+    """Per-game launch configuration."""
+    app_id: str
+    name: str
+    proton_version: Optional[str] = None
+    launch_options: Optional[str] = None
+    env_vars: Optional[Dict[str, str]] = None
+    mangohud: bool = False
+    gamemode: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        return {
+            "app_id": self.app_id,
+            "name": self.name,
+            "proton_version": self.proton_version,
+            "launch_options": self.launch_options,
+            "env_vars": self.env_vars or {},
+            "mangohud": self.mangohud,
+            "gamemode": self.gamemode,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GameLaunchProfile":
+        """Create from dictionary."""
+        return cls(
+            app_id=data["app_id"],
+            name=data.get("name", ""),
+            proton_version=data.get("proton_version"),
+            launch_options=data.get("launch_options"),
+            env_vars=data.get("env_vars"),
+            mangohud=data.get("mangohud", False),
+            gamemode=data.get("gamemode", False),
+        )
+
+
+@dataclass
+class InstalledGame:
+    """Information about an installed Steam game."""
+    app_id: str
+    name: str
+    install_dir: str
+    size_bytes: int
+    proton_version: Optional[str] = None
+    last_played: Optional[str] = None
+    playtime_hours: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        return {
+            "app_id": self.app_id,
+            "name": self.name,
+            "install_dir": self.install_dir,
+            "size_bytes": self.size_bytes,
+            "size_human": self._human_size(self.size_bytes),
+            "proton_version": self.proton_version,
+            "last_played": self.last_played,
+            "playtime_hours": self.playtime_hours,
+        }
+
+    @staticmethod
+    def _human_size(size_bytes: int) -> str:
+        """Convert bytes to human readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} PB"
+
+
+@dataclass
+class ShaderCacheInfo:
+    """Information about a game's shader cache."""
+    app_id: str
+    name: str
+    cache_path: str
+    size_bytes: int
+    file_count: int
+    last_modified: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        return {
+            "app_id": self.app_id,
+            "name": self.name,
+            "cache_path": self.cache_path,
+            "size_bytes": self.size_bytes,
+            "size_human": self._human_size(self.size_bytes),
+            "file_count": self.file_count,
+            "last_modified": self.last_modified,
+        }
+
+    @staticmethod
+    def _human_size(size_bytes: int) -> str:
+        """Convert bytes to human readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} PB"
+
+
+@dataclass
+class CompatdataInfo:
+    """Information about a game's Wine prefix (compatdata)."""
+    app_id: str
+    name: str
+    path: str
+    size_bytes: int
+    last_modified: Optional[str] = None
+    proton_version: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        return {
+            "app_id": self.app_id,
+            "name": self.name,
+            "path": self.path,
+            "size_bytes": self.size_bytes,
+            "size_human": self._human_size(self.size_bytes),
+            "last_modified": self.last_modified,
+            "proton_version": self.proton_version,
+        }
+
+    @staticmethod
+    def _human_size(size_bytes: int) -> str:
+        """Convert bytes to human readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} PB"
+
+
+@dataclass
+class PerformanceToolStatus:
+    """Status of a performance tool."""
+    name: str
+    installed: bool
+    active: bool
+    version: Optional[str] = None
+    details: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        return {
+            "name": self.name,
+            "installed": self.installed,
+            "active": self.active,
+            "version": self.version,
+            "details": self.details,
+        }
+
+
+@dataclass
+class LogEntry:
+    """A parsed log entry from Steam/Proton logs."""
+    timestamp: Optional[str]
+    level: str  # INFO, WARNING, ERROR
+    source: str  # steam, proton, wine
+    message: str
+    game_id: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON output."""
+        return {
+            "timestamp": self.timestamp,
+            "level": self.level,
+            "source": self.source,
+            "message": self.message,
+            "game_id": self.game_id,
+        }
 
 
 # -----------------------------------------------------------------------------
@@ -1364,6 +1539,713 @@ def resolve_game_input(game_input: str) -> Tuple[Optional[str], Optional[str], L
         return (None, None, matches)
     else:
         return (None, None, [])
+
+
+# -----------------------------------------------------------------------------
+# Feature 1: Game Launch Profiles
+# -----------------------------------------------------------------------------
+
+def get_profiles_path() -> str:
+    """Get path to launch profiles config file."""
+    config_dir = os.path.expanduser('~/.config/steam-proton-helper')
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, 'launch_profiles.json')
+
+
+def load_launch_profiles() -> Dict[str, GameLaunchProfile]:
+    """Load all launch profiles from config file."""
+    profiles_path = get_profiles_path()
+    profiles: Dict[str, GameLaunchProfile] = {}
+
+    if os.path.exists(profiles_path):
+        try:
+            with open(profiles_path, 'r') as f:
+                data = json.load(f)
+                for app_id, profile_data in data.items():
+                    profiles[app_id] = GameLaunchProfile.from_dict(profile_data)
+        except (json.JSONDecodeError, KeyError, IOError) as e:
+            verbose_log.log(f"Error loading profiles: {e}")
+
+    return profiles
+
+
+def save_launch_profiles(profiles: Dict[str, GameLaunchProfile]) -> bool:
+    """Save launch profiles to config file."""
+    profiles_path = get_profiles_path()
+
+    try:
+        with open(profiles_path, 'w') as f:
+            data = {app_id: profile.to_dict() for app_id, profile in profiles.items()}
+            json.dump(data, f, indent=2)
+        return True
+    except IOError as e:
+        verbose_log.log(f"Error saving profiles: {e}")
+        return False
+
+
+def get_launch_profile(app_id: str) -> Optional[GameLaunchProfile]:
+    """Get launch profile for a specific game."""
+    profiles = load_launch_profiles()
+    return profiles.get(app_id)
+
+
+def set_launch_profile(profile: GameLaunchProfile) -> bool:
+    """Set or update a launch profile."""
+    profiles = load_launch_profiles()
+    profiles[profile.app_id] = profile
+    return save_launch_profiles(profiles)
+
+
+def delete_launch_profile(app_id: str) -> bool:
+    """Delete a launch profile."""
+    profiles = load_launch_profiles()
+    if app_id in profiles:
+        del profiles[app_id]
+        return save_launch_profiles(profiles)
+    return False
+
+
+def generate_launch_command(profile: GameLaunchProfile) -> str:
+    """Generate Steam launch command with profile settings."""
+    parts = []
+
+    # Add gamemode wrapper if enabled
+    if profile.gamemode:
+        parts.append("gamemoderun")
+
+    # Add mangohud wrapper if enabled
+    if profile.mangohud:
+        parts.append("mangohud")
+
+    # Add environment variables
+    if profile.env_vars:
+        for key, value in profile.env_vars.items():
+            parts.append(f"{key}={value}")
+
+    # Add custom launch options
+    if profile.launch_options:
+        parts.append(profile.launch_options)
+
+    # Add the %command% placeholder
+    parts.append("%command%")
+
+    return " ".join(parts)
+
+
+# -----------------------------------------------------------------------------
+# Feature 2: Shader Cache Management
+# -----------------------------------------------------------------------------
+
+def get_shader_cache_paths(steam_root: Optional[str]) -> List[str]:
+    """Get all possible shader cache directories."""
+    paths = []
+
+    if steam_root:
+        # Main Steam shader cache locations
+        paths.append(os.path.join(steam_root, 'steamapps', 'shadercache'))
+
+        # DXVK state cache in compatdata
+        paths.append(os.path.join(steam_root, 'steamapps', 'compatdata'))
+
+    # Mesa shader cache
+    mesa_cache = os.path.expanduser('~/.cache/mesa_shader_cache')
+    if os.path.isdir(mesa_cache):
+        paths.append(mesa_cache)
+
+    # NVIDIA shader cache
+    nvidia_cache = os.path.expanduser('~/.nv/GLCache')
+    if os.path.isdir(nvidia_cache):
+        paths.append(nvidia_cache)
+
+    # AMD shader cache
+    amd_cache = os.path.expanduser('~/.cache/AMD/GLCache')
+    if os.path.isdir(amd_cache):
+        paths.append(amd_cache)
+
+    return paths
+
+
+def get_directory_size(path: str) -> Tuple[int, int]:
+    """Get total size and file count of a directory."""
+    total_size = 0
+    file_count = 0
+
+    try:
+        for dirpath, _dirnames, filenames in os.walk(path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                try:
+                    total_size += os.path.getsize(filepath)
+                    file_count += 1
+                except (OSError, IOError):
+                    pass
+    except (OSError, IOError):
+        pass
+
+    return total_size, file_count
+
+
+def scan_shader_caches(steam_root: Optional[str]) -> List[ShaderCacheInfo]:
+    """Scan for all shader caches."""
+    caches: List[ShaderCacheInfo] = []
+
+    if not steam_root:
+        return caches
+
+    shader_cache_dir = os.path.join(steam_root, 'steamapps', 'shadercache')
+    if not os.path.isdir(shader_cache_dir):
+        return caches
+
+    # Each subdirectory in shadercache is an app ID
+    try:
+        for entry in os.listdir(shader_cache_dir):
+            entry_path = os.path.join(shader_cache_dir, entry)
+            if os.path.isdir(entry_path) and entry.isdigit():
+                size, file_count = get_directory_size(entry_path)
+
+                # Get last modified time
+                try:
+                    mtime = os.path.getmtime(entry_path)
+                    from datetime import datetime
+                    last_modified = datetime.fromtimestamp(mtime).isoformat()
+                except OSError:
+                    last_modified = None
+
+                caches.append(ShaderCacheInfo(
+                    app_id=entry,
+                    name=f"App {entry}",  # Will be resolved later if possible
+                    cache_path=entry_path,
+                    size_bytes=size,
+                    file_count=file_count,
+                    last_modified=last_modified,
+                ))
+    except (OSError, IOError) as e:
+        verbose_log.log(f"Error scanning shader caches: {e}")
+
+    return sorted(caches, key=lambda c: c.size_bytes, reverse=True)
+
+
+def clear_shader_cache(app_id: str, steam_root: Optional[str]) -> Tuple[bool, str]:
+    """Clear shader cache for a specific game."""
+    if not steam_root:
+        return False, "Steam root not found"
+
+    shader_cache_dir = os.path.join(steam_root, 'steamapps', 'shadercache', app_id)
+
+    if not os.path.isdir(shader_cache_dir):
+        return False, f"No shader cache found for app {app_id}"
+
+    try:
+        size_before, _ = get_directory_size(shader_cache_dir)
+        shutil.rmtree(shader_cache_dir)
+        return True, f"Cleared {size_before / 1024 / 1024:.1f} MB of shader cache"
+    except (OSError, IOError) as e:
+        return False, f"Failed to clear shader cache: {e}"
+
+
+def clear_all_shader_caches(steam_root: Optional[str]) -> Tuple[bool, str]:
+    """Clear all shader caches."""
+    if not steam_root:
+        return False, "Steam root not found"
+
+    shader_cache_dir = os.path.join(steam_root, 'steamapps', 'shadercache')
+
+    if not os.path.isdir(shader_cache_dir):
+        return False, "No shader cache directory found"
+
+    try:
+        size_before, _ = get_directory_size(shader_cache_dir)
+        shutil.rmtree(shader_cache_dir)
+        os.makedirs(shader_cache_dir, exist_ok=True)
+        return True, f"Cleared {size_before / 1024 / 1024:.1f} MB of shader cache"
+    except (OSError, IOError) as e:
+        return False, f"Failed to clear shader caches: {e}"
+
+
+# -----------------------------------------------------------------------------
+# Feature 3: Compatdata (Wine Prefix) Backup/Restore
+# -----------------------------------------------------------------------------
+
+def scan_compatdata(steam_root: Optional[str]) -> List[CompatdataInfo]:
+    """Scan for all Wine prefixes (compatdata)."""
+    prefixes: List[CompatdataInfo] = []
+
+    if not steam_root:
+        return prefixes
+
+    libraries = get_library_paths(steam_root)
+
+    for library in libraries:
+        compatdata_dir = os.path.join(library, 'steamapps', 'compatdata')
+        if not os.path.isdir(compatdata_dir):
+            continue
+
+        try:
+            for entry in os.listdir(compatdata_dir):
+                entry_path = os.path.join(compatdata_dir, entry)
+                if os.path.isdir(entry_path) and entry.isdigit():
+                    size, _ = get_directory_size(entry_path)
+
+                    # Get last modified time
+                    try:
+                        mtime = os.path.getmtime(entry_path)
+                        from datetime import datetime
+                        last_modified = datetime.fromtimestamp(mtime).isoformat()
+                    except OSError:
+                        last_modified = None
+
+                    # Try to detect Proton version from config
+                    proton_version = None
+                    config_path = os.path.join(entry_path, 'config_info')
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                content = f.read()
+                                # Look for Proton path in config
+                                if 'Proton' in content or 'proton' in content:
+                                    for line in content.split('\n'):
+                                        if 'Proton' in line or 'proton' in line:
+                                            proton_version = line.strip()
+                                            break
+                        except IOError:
+                            pass
+
+                    prefixes.append(CompatdataInfo(
+                        app_id=entry,
+                        name=f"App {entry}",
+                        path=entry_path,
+                        size_bytes=size,
+                        last_modified=last_modified,
+                        proton_version=proton_version,
+                    ))
+        except (OSError, IOError) as e:
+            verbose_log.log(f"Error scanning compatdata in {library}: {e}")
+
+    return sorted(prefixes, key=lambda p: p.size_bytes, reverse=True)
+
+
+def backup_compatdata(app_id: str, steam_root: Optional[str], backup_path: Optional[str] = None) -> Tuple[bool, str]:
+    """Backup a game's Wine prefix."""
+    import tarfile
+    from datetime import datetime
+
+    if not steam_root:
+        return False, "Steam root not found"
+
+    # Find compatdata directory
+    libraries = get_library_paths(steam_root)
+    source_path = None
+
+    for library in libraries:
+        candidate = os.path.join(library, 'steamapps', 'compatdata', app_id)
+        if os.path.isdir(candidate):
+            source_path = candidate
+            break
+
+    if not source_path:
+        return False, f"No compatdata found for app {app_id}"
+
+    # Generate backup filename
+    if backup_path is None:
+        backup_dir = os.path.expanduser('~/.local/share/steam-proton-helper/backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = os.path.join(backup_dir, f"compatdata_{app_id}_{timestamp}.tar.gz")
+
+    try:
+        with tarfile.open(backup_path, 'w:gz') as tar:
+            tar.add(source_path, arcname=app_id)
+        size = os.path.getsize(backup_path)
+        return True, f"Backup created: {backup_path} ({size / 1024 / 1024:.1f} MB)"
+    except (OSError, IOError, tarfile.TarError) as e:
+        return False, f"Backup failed: {e}"
+
+
+def restore_compatdata(backup_path: str, steam_root: Optional[str], app_id: Optional[str] = None) -> Tuple[bool, str]:
+    """Restore a game's Wine prefix from backup."""
+    import tarfile
+
+    if not steam_root:
+        return False, "Steam root not found"
+
+    if not os.path.exists(backup_path):
+        return False, f"Backup file not found: {backup_path}"
+
+    try:
+        # Extract to main Steam library
+        compatdata_dir = os.path.join(steam_root, 'steamapps', 'compatdata')
+        os.makedirs(compatdata_dir, exist_ok=True)
+
+        with tarfile.open(backup_path, 'r:gz') as tar:
+            # Get the app ID from the archive if not specified
+            if app_id is None:
+                members = tar.getnames()
+                if members:
+                    app_id = members[0].split('/')[0]
+
+            if app_id:
+                # Remove existing if present
+                existing = os.path.join(compatdata_dir, app_id)
+                if os.path.exists(existing):
+                    shutil.rmtree(existing)
+
+            tar.extractall(compatdata_dir)
+
+        return True, f"Restored compatdata for app {app_id}"
+    except (OSError, IOError, tarfile.TarError) as e:
+        return False, f"Restore failed: {e}"
+
+
+def list_compatdata_backups() -> List[Dict[str, Any]]:
+    """List available compatdata backups."""
+    backup_dir = os.path.expanduser('~/.local/share/steam-proton-helper/backups')
+    backups = []
+
+    if not os.path.isdir(backup_dir):
+        return backups
+
+    try:
+        for entry in os.listdir(backup_dir):
+            if entry.startswith('compatdata_') and entry.endswith('.tar.gz'):
+                entry_path = os.path.join(backup_dir, entry)
+                # Parse filename: compatdata_APPID_TIMESTAMP.tar.gz
+                parts = entry.replace('.tar.gz', '').split('_')
+                if len(parts) >= 3:
+                    app_id = parts[1]
+                    timestamp = '_'.join(parts[2:])
+
+                    try:
+                        size = os.path.getsize(entry_path)
+                        mtime = os.path.getmtime(entry_path)
+                        from datetime import datetime
+                        created = datetime.fromtimestamp(mtime).isoformat()
+                    except OSError:
+                        size = 0
+                        created = None
+
+                    backups.append({
+                        'filename': entry,
+                        'path': entry_path,
+                        'app_id': app_id,
+                        'timestamp': timestamp,
+                        'size_bytes': size,
+                        'created': created,
+                    })
+    except OSError:
+        pass
+
+    return sorted(backups, key=lambda b: b.get('created', ''), reverse=True)
+
+
+# -----------------------------------------------------------------------------
+# Feature 4: Steam Library Scanner
+# -----------------------------------------------------------------------------
+
+def parse_acf_file(acf_path: str) -> Optional[Dict[str, Any]]:
+    """Parse a Steam .acf manifest file."""
+    try:
+        with open(acf_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+
+        data: Dict[str, Any] = {}
+
+        # Extract key fields using regex
+        patterns = {
+            'appid': r'"appid"\s+"(\d+)"',
+            'name': r'"name"\s+"([^"]+)"',
+            'installdir': r'"installdir"\s+"([^"]+)"',
+            'SizeOnDisk': r'"SizeOnDisk"\s+"(\d+)"',
+            'LastPlayed': r'"LastPlayed"\s+"(\d+)"',
+        }
+
+        for key, pattern in patterns.items():
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                data[key] = match.group(1)
+
+        return data if data.get('appid') else None
+
+    except (IOError, OSError) as e:
+        verbose_log.log(f"Error parsing ACF file {acf_path}: {e}")
+        return None
+
+
+def scan_installed_games(steam_root: Optional[str]) -> List[InstalledGame]:
+    """Scan for all installed Steam games."""
+    games: List[InstalledGame] = []
+
+    if not steam_root:
+        return games
+
+    libraries = get_library_paths(steam_root)
+
+    for library in libraries:
+        steamapps = os.path.join(library, 'steamapps')
+        if not os.path.isdir(steamapps):
+            continue
+
+        try:
+            for entry in os.listdir(steamapps):
+                if entry.startswith('appmanifest_') and entry.endswith('.acf'):
+                    acf_path = os.path.join(steamapps, entry)
+                    data = parse_acf_file(acf_path)
+
+                    if data and data.get('appid'):
+                        app_id = data['appid']
+                        name = data.get('name', f'App {app_id}')
+                        install_dir = data.get('installdir', '')
+                        size = int(data.get('SizeOnDisk', 0))
+
+                        # Get Proton version from compatdata
+                        proton_version = None
+                        compatdata_path = os.path.join(steamapps, 'compatdata', app_id)
+                        if os.path.isdir(compatdata_path):
+                            config_path = os.path.join(compatdata_path, 'config_info')
+                            if os.path.exists(config_path):
+                                try:
+                                    with open(config_path, 'r') as f:
+                                        lines = f.readlines()
+                                        if lines:
+                                            proton_version = lines[0].strip()
+                                except IOError:
+                                    pass
+
+                        # Get last played time
+                        last_played = None
+                        if data.get('LastPlayed'):
+                            try:
+                                timestamp = int(data['LastPlayed'])
+                                if timestamp > 0:
+                                    from datetime import datetime
+                                    last_played = datetime.fromtimestamp(timestamp).isoformat()
+                            except (ValueError, OSError):
+                                pass
+
+                        games.append(InstalledGame(
+                            app_id=app_id,
+                            name=name,
+                            install_dir=os.path.join(steamapps, 'common', install_dir),
+                            size_bytes=size,
+                            proton_version=proton_version,
+                            last_played=last_played,
+                        ))
+        except (OSError, IOError) as e:
+            verbose_log.log(f"Error scanning library {library}: {e}")
+
+    return sorted(games, key=lambda g: g.name.lower())
+
+
+# -----------------------------------------------------------------------------
+# Feature 5: Performance Tools Check
+# -----------------------------------------------------------------------------
+
+def check_performance_tools() -> List[PerformanceToolStatus]:
+    """Check status of performance tools (GameMode, MangoHud, etc.)."""
+    tools: List[PerformanceToolStatus] = []
+
+    # Check GameMode
+    gamemode_installed = shutil.which('gamemoderun') is not None
+    gamemode_active = False
+    gamemode_version = None
+
+    if gamemode_installed:
+        try:
+            result = subprocess.run(['gamemoded', '--status'], capture_output=True, text=True, timeout=5)
+            gamemode_active = 'active' in result.stdout.lower() or result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+
+        try:
+            result = subprocess.run(['gamemoderun', '--version'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                gamemode_version = result.stdout.strip().split('\n')[0]
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+
+    tools.append(PerformanceToolStatus(
+        name="GameMode",
+        installed=gamemode_installed,
+        active=gamemode_active,
+        version=gamemode_version,
+        details="CPU governor optimization for gaming" if gamemode_installed else "Not installed - sudo apt install gamemode",
+    ))
+
+    # Check MangoHud
+    mangohud_installed = shutil.which('mangohud') is not None
+    mangohud_version = None
+
+    if mangohud_installed:
+        try:
+            result = subprocess.run(['mangohud', '--version'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                mangohud_version = result.stdout.strip().split('\n')[0]
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+
+    tools.append(PerformanceToolStatus(
+        name="MangoHud",
+        installed=mangohud_installed,
+        active=False,  # MangoHud is per-game, not a daemon
+        version=mangohud_version,
+        details="FPS/performance overlay" if mangohud_installed else "Not installed - sudo apt install mangohud",
+    ))
+
+    # Check vkBasalt
+    vkbasalt_installed = os.path.exists('/usr/lib/x86_64-linux-gnu/libvkbasalt.so') or \
+                         os.path.exists('/usr/lib64/libvkbasalt.so') or \
+                         shutil.which('vkbasalt') is not None
+
+    tools.append(PerformanceToolStatus(
+        name="vkBasalt",
+        installed=vkbasalt_installed,
+        active=False,
+        version=None,
+        details="Vulkan post-processing layer" if vkbasalt_installed else "Not installed",
+    ))
+
+    # Check libstrangle (FPS limiter)
+    strangle_installed = shutil.which('strangle') is not None or \
+                        os.path.exists('/usr/lib/libstrangle.so') or \
+                        os.path.exists('/usr/lib64/libstrangle.so')
+
+    tools.append(PerformanceToolStatus(
+        name="libstrangle",
+        installed=strangle_installed,
+        active=False,
+        version=None,
+        details="FPS limiter" if strangle_installed else "Not installed",
+    ))
+
+    # Check CoreCtrl (AMD GPU control)
+    corectrl_installed = shutil.which('corectrl') is not None
+
+    tools.append(PerformanceToolStatus(
+        name="CoreCtrl",
+        installed=corectrl_installed,
+        active=False,
+        version=None,
+        details="AMD GPU control panel" if corectrl_installed else "Not installed (AMD only)",
+    ))
+
+    # Check GOverlay (MangoHud configurator)
+    goverlay_installed = shutil.which('goverlay') is not None
+
+    tools.append(PerformanceToolStatus(
+        name="GOverlay",
+        installed=goverlay_installed,
+        active=False,
+        version=None,
+        details="MangoHud/vkBasalt GUI configurator" if goverlay_installed else "Not installed",
+    ))
+
+    return tools
+
+
+# -----------------------------------------------------------------------------
+# Feature 6: Log Viewer
+# -----------------------------------------------------------------------------
+
+def get_log_paths(steam_root: Optional[str]) -> List[Tuple[str, str]]:
+    """Get paths to Steam/Proton log files."""
+    logs: List[Tuple[str, str]] = []  # (path, type)
+
+    # Steam logs
+    if steam_root:
+        steam_logs = [
+            (os.path.join(steam_root, 'logs', 'bootstrap_log.txt'), 'steam'),
+            (os.path.join(steam_root, 'logs', 'content_log.txt'), 'steam'),
+            (os.path.join(steam_root, 'logs', 'shader_log.txt'), 'steam'),
+            (os.path.join(steam_root, 'logs', 'steamwebhelper.txt'), 'steam'),
+        ]
+        for path, log_type in steam_logs:
+            if os.path.exists(path):
+                logs.append((path, log_type))
+
+    # XDG runtime dir for Steam IPC
+    runtime_dir = os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')
+    steam_pipe = os.path.join(runtime_dir, 'steam.pipe')
+    if os.path.exists(steam_pipe):
+        logs.append((steam_pipe, 'steam'))
+
+    # Proton logs in /tmp
+    tmp_dir = '/tmp'
+    try:
+        for entry in os.listdir(tmp_dir):
+            if entry.startswith('proton_') or entry.startswith('wine_'):
+                path = os.path.join(tmp_dir, entry)
+                if os.path.isfile(path):
+                    logs.append((path, 'proton'))
+    except OSError:
+        pass
+
+    # DXVK logs
+    dxvk_log = os.path.expanduser('~/dxvk.log')
+    if os.path.exists(dxvk_log):
+        logs.append((dxvk_log, 'dxvk'))
+
+    return logs
+
+
+def parse_log_file(log_path: str, log_type: str, max_lines: int = 1000) -> List[LogEntry]:
+    """Parse a log file and extract entries."""
+    entries: List[LogEntry] = []
+
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()[-max_lines:]
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Determine log level
+            level = 'INFO'
+            line_lower = line.lower()
+            if 'error' in line_lower or 'fail' in line_lower or 'fatal' in line_lower:
+                level = 'ERROR'
+            elif 'warn' in line_lower:
+                level = 'WARNING'
+
+            # Try to extract timestamp (various formats)
+            timestamp = None
+            # Format: [2024-01-15 10:30:45]
+            ts_match = re.search(r'\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\]', line)
+            if ts_match:
+                timestamp = ts_match.group(1)
+
+            entries.append(LogEntry(
+                timestamp=timestamp,
+                level=level,
+                source=log_type,
+                message=line,
+                game_id=None,
+            ))
+
+    except (IOError, OSError) as e:
+        verbose_log.log(f"Error reading log {log_path}: {e}")
+
+    return entries
+
+
+def scan_logs(steam_root: Optional[str], errors_only: bool = False, max_entries: int = 100) -> List[LogEntry]:
+    """Scan all logs and return entries."""
+    all_entries: List[LogEntry] = []
+
+    log_paths = get_log_paths(steam_root)
+
+    for path, log_type in log_paths:
+        entries = parse_log_file(path, log_type)
+        all_entries.extend(entries)
+
+    # Filter to errors only if requested
+    if errors_only:
+        all_entries = [e for e in all_entries if e.level == 'ERROR']
+
+    # Sort by timestamp (entries without timestamp go to end)
+    all_entries.sort(key=lambda e: e.timestamp or 'Z', reverse=True)
+
+    return all_entries[:max_entries]
 
 
 def fetch_protondb_info(app_id: str) -> Optional[ProtonDBInfo]:
@@ -2674,6 +3556,94 @@ Note: Use --dry-run to preview before --apply. Requires sudo for installation.
         help='Recommend best Proton version for a game based on ProtonDB reports'
     )
 
+    # Feature: Steam library scanner
+    parser.add_argument(
+        '--list-games',
+        action='store_true',
+        help='List installed Steam games with their Proton versions'
+    )
+
+    # Feature: Game launch profiles
+    parser.add_argument(
+        '--profile',
+        metavar='ACTION',
+        nargs='?',
+        const='list',
+        help='Manage launch profiles: list, get <appid>, set <appid> [options], delete <appid>'
+    )
+
+    parser.add_argument(
+        '--profile-proton',
+        metavar='VERSION',
+        help='Proton version to use with --profile set (e.g., "GE-Proton10-26")'
+    )
+
+    parser.add_argument(
+        '--profile-options',
+        metavar='OPTIONS',
+        help='Launch options to use with --profile set'
+    )
+
+    parser.add_argument(
+        '--profile-mangohud',
+        action='store_true',
+        help='Enable MangoHud for profile'
+    )
+
+    parser.add_argument(
+        '--profile-gamemode',
+        action='store_true',
+        help='Enable GameMode for profile'
+    )
+
+    # Feature: Shader cache management
+    parser.add_argument(
+        '--shader-cache',
+        metavar='ACTION',
+        nargs='?',
+        const='list',
+        help='Manage shader caches: list, clear <appid|all>'
+    )
+
+    # Feature: Compatdata backup/restore
+    parser.add_argument(
+        '--compatdata',
+        metavar='ACTION',
+        nargs='?',
+        const='list',
+        help='Manage Wine prefixes: list, backup <appid>, restore <appid>, backups'
+    )
+
+    parser.add_argument(
+        '--backup-dir',
+        metavar='DIR',
+        help='Directory for compatdata backups (default: ~/.local/share/steam-proton-helper/backups)'
+    )
+
+    # Feature: Performance tools check
+    parser.add_argument(
+        '--perf-tools',
+        action='store_true',
+        help='Check status of gaming performance tools (GameMode, MangoHud, etc.)'
+    )
+
+    # Feature: Log viewer
+    parser.add_argument(
+        '--logs',
+        metavar='TYPE',
+        nargs='?',
+        const='all',
+        help='View Steam/Proton logs: all, errors, steam, proton, dxvk'
+    )
+
+    parser.add_argument(
+        '--log-lines',
+        metavar='N',
+        type=int,
+        default=50,
+        help='Number of log entries to show (default: 50)'
+    )
+
     return parser.parse_args()
 
 
@@ -3070,6 +4040,397 @@ def main() -> int:
 
         # Return 1 if any errors, 0 if all succeeded
         return 1 if errors else 0
+
+    # Handle --list-games flag (Steam library scanner)
+    if getattr(args, 'list_games', False):
+        steam_root = find_steam_root()
+        if not steam_root:
+            if args.json:
+                print(json.dumps({"error": "Steam not found", "games": []}, indent=2))
+            else:
+                print(f"{Color.RED}✗ Steam not found{Color.END}")
+            return 1
+
+        games = scan_installed_games(steam_root)
+
+        if args.json:
+            output = {
+                "steam_root": steam_root,
+                "count": len(games),
+                "games": [g.to_dict() for g in games]
+            }
+            print(json.dumps(output, indent=2))
+        elif games:
+            print(f"\n{Color.BOLD}Installed Steam Games{Color.END} ({len(games)} found)\n")
+
+            total_size = sum(g.size_bytes for g in games)
+            print(f"  Total size: {total_size / (1024**3):.1f} GB\n")
+
+            # Sort by name
+            for g in sorted(games, key=lambda x: x.name.lower()):
+                size_gb = g.size_bytes / (1024**3)
+                proton = g.proton_version or "Native"
+                print(f"  {g.name}")
+                print(f"    AppID: {g.app_id}  Size: {size_gb:.1f} GB  Proton: {proton}")
+                if args.verbose and g.last_played:
+                    print(f"    Last played: {g.last_played}  Playtime: {g.playtime_hours:.1f}h")
+        else:
+            print(f"{Color.YELLOW}No installed games found.{Color.END}")
+        return 0
+
+    # Handle --perf-tools flag (Performance tools check)
+    if getattr(args, 'perf_tools', False):
+        tools = check_performance_tools()
+
+        if args.json:
+            output = {
+                "tools": [
+                    {
+                        "name": t.name,
+                        "installed": t.installed,
+                        "active": t.active,
+                        "version": t.version,
+                        "details": t.details,
+                    }
+                    for t in tools
+                ]
+            }
+            print(json.dumps(output, indent=2))
+        else:
+            print(f"\n{Color.BOLD}Gaming Performance Tools{Color.END}\n")
+
+            for t in tools:
+                if t.installed:
+                    status = f"{Color.GREEN}✓{Color.END}"
+                    active_str = f" {Color.CYAN}(active){Color.END}" if t.active else ""
+                    version_str = f" v{t.version}" if t.version else ""
+                    print(f"  {status} {Color.BOLD}{t.name}{Color.END}{version_str}{active_str}")
+                else:
+                    print(f"  {Color.DIM}○{Color.END} {t.name} - {t.details}")
+
+            print(f"\n{Color.DIM}Install performance tools with your package manager.{Color.END}")
+        return 0
+
+    # Handle --logs flag (Log viewer)
+    if getattr(args, 'logs', None) is not None:
+        steam_root = find_steam_root()
+        log_filter = args.logs.lower() if args.logs else 'all'
+        max_entries = args.log_lines
+
+        errors_only = (log_filter == 'errors')
+        entries = scan_logs(steam_root, errors_only=errors_only, max_entries=max_entries)
+
+        # Filter by source if requested
+        if log_filter not in ('all', 'errors'):
+            entries = [e for e in entries if e.source == log_filter]
+
+        if args.json:
+            output = {
+                "filter": log_filter,
+                "count": len(entries),
+                "entries": [
+                    {
+                        "timestamp": e.timestamp,
+                        "level": e.level,
+                        "source": e.source,
+                        "message": e.message,
+                    }
+                    for e in entries
+                ]
+            }
+            print(json.dumps(output, indent=2))
+        elif entries:
+            print(f"\n{Color.BOLD}Steam/Proton Logs{Color.END} ({len(entries)} entries)\n")
+
+            for e in entries:
+                level_color = {
+                    'ERROR': Color.RED,
+                    'WARNING': Color.YELLOW,
+                    'INFO': Color.DIM,
+                }.get(e.level, '')
+
+                ts = e.timestamp or ''
+                source = f"[{e.source}]"
+                print(f"  {ts} {level_color}{e.level:7}{Color.END} {source:10} {e.message[:80]}")
+        else:
+            print(f"{Color.YELLOW}No log entries found.{Color.END}")
+        return 0
+
+    # Handle --shader-cache flag (Shader cache management)
+    if getattr(args, 'shader_cache', None) is not None:
+        steam_root = find_steam_root()
+        if not steam_root:
+            if args.json:
+                print(json.dumps({"error": "Steam not found"}, indent=2))
+            else:
+                print(f"{Color.RED}✗ Steam not found{Color.END}")
+            return 1
+
+        action = args.shader_cache.lower() if args.shader_cache else 'list'
+
+        if action == 'list':
+            caches = scan_shader_caches(steam_root)
+
+            if args.json:
+                output = {
+                    "caches": [
+                        {
+                            "app_id": c.app_id,
+                            "name": c.name,
+                            "path": c.cache_path,
+                            "size_mb": round(c.size_bytes / (1024 * 1024), 1),
+                            "file_count": c.file_count,
+                            "last_modified": c.last_modified,
+                        }
+                        for c in caches
+                    ],
+                    "total_size_mb": round(sum(c.size_bytes for c in caches) / (1024 * 1024), 1)
+                }
+                print(json.dumps(output, indent=2))
+            elif caches:
+                total_size = sum(c.size_bytes for c in caches)
+                print(f"\n{Color.BOLD}Shader Caches{Color.END} ({len(caches)} games, {total_size / (1024**2):.0f} MB total)\n")
+
+                for c in sorted(caches, key=lambda x: x.size_bytes, reverse=True)[:20]:
+                    size_mb = c.size_bytes / (1024**2)
+                    print(f"  {c.name or c.app_id:<40} {size_mb:>8.1f} MB  ({c.file_count} files)")
+
+                print(f"\n{Color.DIM}Clear with: --shader-cache clear <appid|all>{Color.END}")
+            else:
+                print(f"{Color.YELLOW}No shader caches found.{Color.END}")
+
+        elif action.startswith('clear'):
+            # Parse: clear all or clear <appid>
+            parts = action.split()
+            target = parts[1] if len(parts) > 1 else 'all'
+
+            if target == 'all':
+                cleared, total = clear_all_shader_caches(steam_root)
+                print(f"{Color.GREEN}✓ Cleared {cleared} shader caches ({total / (1024**2):.0f} MB){Color.END}")
+            else:
+                success, cleared_bytes = clear_shader_cache(steam_root, target)
+                if success:
+                    print(f"{Color.GREEN}✓ Cleared shader cache for {target} ({cleared_bytes / (1024**2):.0f} MB){Color.END}")
+                else:
+                    print(f"{Color.RED}✗ Shader cache not found for {target}{Color.END}")
+                    return 1
+        else:
+            print(f"{Color.RED}Unknown shader-cache action: {action}{Color.END}")
+            print("Use: --shader-cache list, --shader-cache clear <appid|all>")
+            return 1
+        return 0
+
+    # Handle --compatdata flag (Wine prefix backup/restore)
+    if getattr(args, 'compatdata', None) is not None:
+        steam_root = find_steam_root()
+        if not steam_root:
+            if args.json:
+                print(json.dumps({"error": "Steam not found"}, indent=2))
+            else:
+                print(f"{Color.RED}✗ Steam not found{Color.END}")
+            return 1
+
+        action = args.compatdata.lower() if args.compatdata else 'list'
+        backup_dir = args.backup_dir or os.path.expanduser('~/.local/share/steam-proton-helper/backups')
+
+        if action == 'list':
+            prefixes = scan_compatdata(steam_root)
+
+            if args.json:
+                output = {
+                    "prefixes": [
+                        {
+                            "app_id": p.app_id,
+                            "name": p.name,
+                            "path": p.path,
+                            "size_mb": round(p.size_bytes / (1024 * 1024), 1),
+                            "last_modified": p.last_modified,
+                            "proton_version": p.proton_version,
+                        }
+                        for p in prefixes
+                    ],
+                    "total_size_mb": round(sum(p.size_bytes for p in prefixes) / (1024 * 1024), 1)
+                }
+                print(json.dumps(output, indent=2))
+            elif prefixes:
+                total_size = sum(p.size_bytes for p in prefixes)
+                print(f"\n{Color.BOLD}Wine Prefixes (compatdata){Color.END} ({len(prefixes)} games, {total_size / (1024**3):.1f} GB total)\n")
+
+                for p in sorted(prefixes, key=lambda x: x.size_bytes, reverse=True)[:20]:
+                    size_gb = p.size_bytes / (1024**3)
+                    name = p.name or p.app_id
+                    print(f"  {name:<40} {size_gb:>6.1f} GB")
+                    if args.verbose:
+                        print(f"    {Color.DIM}AppID: {p.app_id}  Proton: {p.proton_version or 'unknown'}{Color.END}")
+
+                print(f"\n{Color.DIM}Backup with: --compatdata backup <appid>{Color.END}")
+            else:
+                print(f"{Color.YELLOW}No Wine prefixes found.{Color.END}")
+
+        elif action == 'backups':
+            backups = list_compatdata_backups(backup_dir)
+
+            if args.json:
+                print(json.dumps({"backups": backups}, indent=2))
+            elif backups:
+                print(f"\n{Color.BOLD}Available Backups{Color.END}\n")
+                for b in backups:
+                    size_mb = b['size_bytes'] / (1024**2)
+                    print(f"  {b['filename']:<50} {size_mb:>8.1f} MB  {b['created']}")
+
+                print(f"\n{Color.DIM}Restore with: --compatdata restore <appid>{Color.END}")
+            else:
+                print(f"{Color.YELLOW}No backups found in {backup_dir}{Color.END}")
+
+        elif action.startswith('backup'):
+            parts = action.split()
+            if len(parts) < 2:
+                print(f"{Color.RED}Usage: --compatdata 'backup <appid>'{Color.END}")
+                return 1
+            app_id = parts[1]
+
+            print(f"Backing up Wine prefix for AppID {app_id}...")
+            success, result = backup_compatdata(steam_root, app_id, backup_dir)
+            if success:
+                print(f"{Color.GREEN}✓ Backup created: {result}{Color.END}")
+            else:
+                print(f"{Color.RED}✗ {result}{Color.END}")
+                return 1
+
+        elif action.startswith('restore'):
+            parts = action.split()
+            if len(parts) < 2:
+                print(f"{Color.RED}Usage: --compatdata 'restore <appid>'{Color.END}")
+                return 1
+            app_id = parts[1]
+
+            print(f"Restoring Wine prefix for AppID {app_id}...")
+            success, result = restore_compatdata(steam_root, app_id, backup_dir)
+            if success:
+                print(f"{Color.GREEN}✓ {result}{Color.END}")
+            else:
+                print(f"{Color.RED}✗ {result}{Color.END}")
+                return 1
+
+        else:
+            print(f"{Color.RED}Unknown compatdata action: {action}{Color.END}")
+            print("Use: --compatdata list, --compatdata backups, --compatdata 'backup <appid>', --compatdata 'restore <appid>'")
+            return 1
+        return 0
+
+    # Handle --profile flag (Game launch profiles)
+    if getattr(args, 'profile', None) is not None:
+        action = args.profile.lower() if args.profile else 'list'
+
+        if action == 'list':
+            profiles = load_launch_profiles()
+
+            if args.json:
+                output = {
+                    "profiles": {app_id: p.to_dict() for app_id, p in profiles.items()}
+                }
+                print(json.dumps(output, indent=2))
+            elif profiles:
+                print(f"\n{Color.BOLD}Game Launch Profiles{Color.END} ({len(profiles)} profiles)\n")
+
+                for app_id, p in profiles.items():
+                    features = []
+                    if p.mangohud:
+                        features.append("MangoHud")
+                    if p.gamemode:
+                        features.append("GameMode")
+                    if p.proton_version:
+                        features.append(f"Proton: {p.proton_version}")
+
+                    features_str = f" ({', '.join(features)})" if features else ""
+                    print(f"  {p.name or app_id}{features_str}")
+                    print(f"    AppID: {app_id}")
+                    if p.launch_options:
+                        print(f"    Launch: {p.launch_options}")
+                    if args.verbose:
+                        cmd = generate_launch_command(p)
+                        print(f"    {Color.DIM}Full command: {cmd}{Color.END}")
+            else:
+                print(f"{Color.YELLOW}No launch profiles configured.{Color.END}")
+                print(f"\n{Color.DIM}Create with: --profile 'set <appid>' --profile-mangohud --profile-gamemode{Color.END}")
+
+        elif action.startswith('get'):
+            parts = action.split()
+            if len(parts) < 2:
+                print(f"{Color.RED}Usage: --profile 'get <appid>'{Color.END}")
+                return 1
+            app_id = parts[1]
+
+            profile = get_launch_profile(app_id)
+            if profile:
+                if args.json:
+                    print(json.dumps(profile.to_dict(), indent=2))
+                else:
+                    print(f"\n{Color.BOLD}Profile for {profile.name or app_id}{Color.END}\n")
+                    print(f"  Proton: {profile.proton_version or 'default'}")
+                    print(f"  MangoHud: {'enabled' if profile.mangohud else 'disabled'}")
+                    print(f"  GameMode: {'enabled' if profile.gamemode else 'disabled'}")
+                    if profile.launch_options:
+                        print(f"  Launch options: {profile.launch_options}")
+                    if profile.env_vars:
+                        print(f"  Environment:")
+                        for k, v in profile.env_vars.items():
+                            print(f"    {k}={v}")
+                    print(f"\n  {Color.DIM}Steam launch command:{Color.END}")
+                    print(f"  {generate_launch_command(profile)}")
+            else:
+                print(f"{Color.YELLOW}No profile found for AppID {app_id}{Color.END}")
+                return 1
+
+        elif action.startswith('set'):
+            parts = action.split()
+            if len(parts) < 2:
+                print(f"{Color.RED}Usage: --profile 'set <appid>' [options]{Color.END}")
+                return 1
+            app_id = parts[1]
+
+            # Get existing profile or create new one
+            profile = get_launch_profile(app_id) or GameLaunchProfile(
+                app_id=app_id,
+                name=f"Game {app_id}",
+            )
+
+            # Update from CLI args
+            if args.profile_proton:
+                profile.proton_version = args.profile_proton
+            if args.profile_options:
+                profile.launch_options = args.profile_options
+            if args.profile_mangohud:
+                profile.mangohud = True
+            if args.profile_gamemode:
+                profile.gamemode = True
+
+            if set_launch_profile(profile):
+                print(f"{Color.GREEN}✓ Profile saved for AppID {app_id}{Color.END}")
+                print(f"\n  {Color.DIM}Steam launch command:{Color.END}")
+                print(f"  {generate_launch_command(profile)}")
+            else:
+                print(f"{Color.RED}✗ Failed to save profile{Color.END}")
+                return 1
+
+        elif action.startswith('delete'):
+            parts = action.split()
+            if len(parts) < 2:
+                print(f"{Color.RED}Usage: --profile 'delete <appid>'{Color.END}")
+                return 1
+            app_id = parts[1]
+
+            if delete_launch_profile(app_id):
+                print(f"{Color.GREEN}✓ Profile deleted for AppID {app_id}{Color.END}")
+            else:
+                print(f"{Color.YELLOW}No profile found for AppID {app_id}{Color.END}")
+                return 1
+
+        else:
+            print(f"{Color.RED}Unknown profile action: {action}{Color.END}")
+            print("Use: --profile list, --profile 'get <appid>', --profile 'set <appid>', --profile 'delete <appid>'")
+            return 1
+        return 0
 
     try:
         # Detect distro

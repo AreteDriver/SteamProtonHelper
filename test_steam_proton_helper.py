@@ -6418,5 +6418,579 @@ class TestScanLogs(unittest.TestCase):
         self.assertLessEqual(len(entries), 50)
 
 
+# =============================================================================
+# CLI Handler Tests for New Features
+# =============================================================================
+
+class TestListGamesCLI(unittest.TestCase):
+    """Tests for --list-games CLI handler."""
+
+    def test_list_games_no_steam(self):
+        """Test --list-games when Steam not found."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--list-games']):
+            with patch('steam_proton_helper.find_steam_root', return_value=None):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Steam not found", output)
+
+    def test_list_games_json_no_steam(self):
+        """Test --list-games --json when Steam not found."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--list-games', '--json']):
+            with patch('steam_proton_helper.find_steam_root', return_value=None):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        data = json.loads(output)
+        self.assertIn("error", data)
+
+    def test_list_games_success(self):
+        """Test --list-games with installed games."""
+        import io
+        from steam_proton_helper import main
+
+        mock_games = [
+            InstalledGame(app_id="12345", name="Test Game", install_dir="/path", size_bytes=5000000000, proton_version=None, last_played=None)
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--list-games']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_installed_games', return_value=mock_games):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Test Game", output)
+
+    def test_list_games_json_success(self):
+        """Test --list-games --json with installed games."""
+        import io
+        from steam_proton_helper import main
+
+        mock_games = [
+            InstalledGame(app_id="12345", name="Test Game", install_dir="/path", size_bytes=5000000000, proton_version=None, last_played=None)
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--list-games', '--json']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_installed_games', return_value=mock_games):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        data = json.loads(output)
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['games'][0]['name'], "Test Game")
+
+
+class TestPerfToolsCLI(unittest.TestCase):
+    """Tests for --perf-tools CLI handler."""
+
+    def test_perf_tools_basic(self):
+        """Test --perf-tools basic output."""
+        import io
+        from steam_proton_helper import main
+
+        mock_tools = [
+            PerformanceToolStatus(name="GameMode", installed=True, active=True, version="1.7", details="CPU optimization"),
+            PerformanceToolStatus(name="MangoHud", installed=False, active=False, version=None, details="Not installed"),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--perf-tools']):
+            with patch('steam_proton_helper.check_performance_tools', return_value=mock_tools):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("GameMode", output)
+        self.assertIn("MangoHud", output)
+
+    def test_perf_tools_json(self):
+        """Test --perf-tools --json output."""
+        import io
+        from steam_proton_helper import main
+
+        mock_tools = [
+            PerformanceToolStatus(name="GameMode", installed=True, active=True, version="1.7", details="CPU optimization"),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--perf-tools', '--json']):
+            with patch('steam_proton_helper.check_performance_tools', return_value=mock_tools):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        data = json.loads(output)
+        self.assertEqual(data['tools'][0]['name'], "GameMode")
+        self.assertTrue(data['tools'][0]['installed'])
+
+
+class TestLogsCLI(unittest.TestCase):
+    """Tests for --logs CLI handler."""
+
+    def test_logs_basic(self):
+        """Test --logs basic output."""
+        import io
+        from steam_proton_helper import main
+
+        mock_entries = [
+            LogEntry(timestamp="2024-01-15 10:30:00", level="INFO", source="steam", message="Test log", game_id=None),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--logs', 'all']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_logs', return_value=mock_entries):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Test log", output)
+
+    def test_logs_errors_only(self):
+        """Test --logs errors filter."""
+        import io
+        from steam_proton_helper import main
+
+        mock_entries = [
+            LogEntry(timestamp="2024-01-15 10:30:00", level="ERROR", source="steam", message="Error log", game_id=None),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--logs', 'errors']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_logs', return_value=mock_entries):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Error log", output)
+
+    def test_logs_json(self):
+        """Test --logs --json output."""
+        import io
+        from steam_proton_helper import main
+
+        mock_entries = [
+            LogEntry(timestamp="2024-01-15 10:30:00", level="INFO", source="steam", message="Test log", game_id=None),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--logs', 'all', '--json']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_logs', return_value=mock_entries):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        data = json.loads(output)
+        self.assertEqual(data['count'], 1)
+
+    def test_logs_no_entries(self):
+        """Test --logs with no entries."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--logs', 'all']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_logs', return_value=[]):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("No log entries", output)
+
+
+class TestShaderCacheCLI(unittest.TestCase):
+    """Tests for --shader-cache CLI handler."""
+
+    def test_shader_cache_no_steam(self):
+        """Test --shader-cache when Steam not found."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--shader-cache', 'list']):
+            with patch('steam_proton_helper.find_steam_root', return_value=None):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Steam not found", output)
+
+    def test_shader_cache_list(self):
+        """Test --shader-cache list."""
+        import io
+        from steam_proton_helper import main
+
+        mock_caches = [
+            ShaderCacheInfo(app_id="12345", name="Test Game", cache_path="/path", size_bytes=100000000, file_count=100, last_modified="2024-01-15"),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--shader-cache', 'list']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_shader_caches', return_value=mock_caches):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Shader Caches", output)
+
+    def test_shader_cache_list_json(self):
+        """Test --shader-cache list --json."""
+        import io
+        from steam_proton_helper import main
+
+        mock_caches = [
+            ShaderCacheInfo(app_id="12345", name="Test Game", cache_path="/path", size_bytes=100000000, file_count=100, last_modified="2024-01-15"),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--shader-cache', 'list', '--json']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_shader_caches', return_value=mock_caches):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        data = json.loads(output)
+        self.assertEqual(len(data['caches']), 1)
+
+    def test_shader_cache_no_caches(self):
+        """Test --shader-cache list with no caches."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--shader-cache', 'list']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_shader_caches', return_value=[]):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("No shader caches", output)
+
+    def test_shader_cache_unknown_action(self):
+        """Test --shader-cache with unknown action."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--shader-cache', 'invalid']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Unknown shader-cache action", output)
+
+
+class TestCompatdataCLI(unittest.TestCase):
+    """Tests for --compatdata CLI handler."""
+
+    def test_compatdata_no_steam(self):
+        """Test --compatdata when Steam not found."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--compatdata', 'list']):
+            with patch('steam_proton_helper.find_steam_root', return_value=None):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Steam not found", output)
+
+    def test_compatdata_list(self):
+        """Test --compatdata list."""
+        import io
+        from steam_proton_helper import main
+
+        mock_prefixes = [
+            CompatdataInfo(app_id="12345", name="Test Game", path="/path", size_bytes=5000000000, last_modified="2024-01-15", proton_version="GE-Proton9-5"),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--compatdata', 'list']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_compatdata', return_value=mock_prefixes):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Wine Prefixes", output)
+
+    def test_compatdata_list_json(self):
+        """Test --compatdata list --json."""
+        import io
+        from steam_proton_helper import main
+
+        mock_prefixes = [
+            CompatdataInfo(app_id="12345", name="Test Game", path="/path", size_bytes=5000000000, last_modified="2024-01-15", proton_version="GE-Proton9-5"),
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--compatdata', 'list', '--json']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_compatdata', return_value=mock_prefixes):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        data = json.loads(output)
+        self.assertEqual(len(data['prefixes']), 1)
+
+    def test_compatdata_no_prefixes(self):
+        """Test --compatdata list with no prefixes."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--compatdata', 'list']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.scan_compatdata', return_value=[]):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("No Wine prefixes", output)
+
+    def test_compatdata_backups_list(self):
+        """Test --compatdata backups."""
+        import io
+        from steam_proton_helper import main
+
+        mock_backups = [
+            {'filename': 'compatdata_12345_20240115.tar.gz', 'size_bytes': 1000000, 'created': '2024-01-15'}
+        ]
+
+        with patch('sys.argv', ['steam-proton-helper', '--compatdata', 'backups']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('steam_proton_helper.list_compatdata_backups', return_value=mock_backups):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Available Backups", output)
+
+    def test_compatdata_backup_no_appid(self):
+        """Test --compatdata backup without appid."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--compatdata', 'backup']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Usage", output)
+
+    def test_compatdata_unknown_action(self):
+        """Test --compatdata with unknown action."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--compatdata', 'invalid']):
+            with patch('steam_proton_helper.find_steam_root', return_value='/home/user/.steam/steam'):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Unknown compatdata action", output)
+
+
+class TestProfileCLI(unittest.TestCase):
+    """Tests for --profile CLI handler."""
+
+    def test_profile_list_empty(self):
+        """Test --profile list with no profiles."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'list']):
+            with patch('steam_proton_helper.load_launch_profiles', return_value={}):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("No launch profiles", output)
+
+    def test_profile_list_with_profiles(self):
+        """Test --profile list with profiles."""
+        import io
+        from steam_proton_helper import main
+
+        mock_profiles = {
+            "12345": GameLaunchProfile(app_id="12345", name="Test Game", gamemode=True, mangohud=True)
+        }
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'list']):
+            with patch('steam_proton_helper.load_launch_profiles', return_value=mock_profiles):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Test Game", output)
+        self.assertIn("MangoHud", output)
+        self.assertIn("GameMode", output)
+
+    def test_profile_list_json(self):
+        """Test --profile list --json."""
+        import io
+        from steam_proton_helper import main
+
+        mock_profiles = {
+            "12345": GameLaunchProfile(app_id="12345", name="Test Game", gamemode=True)
+        }
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'list', '--json']):
+            with patch('steam_proton_helper.load_launch_profiles', return_value=mock_profiles):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        data = json.loads(output)
+        self.assertIn("12345", data['profiles'])
+
+    def test_profile_get_found(self):
+        """Test --profile get <appid> when found."""
+        import io
+        from steam_proton_helper import main
+
+        mock_profile = GameLaunchProfile(app_id="12345", name="Test Game", gamemode=True)
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'get 12345']):
+            with patch('steam_proton_helper.get_launch_profile', return_value=mock_profile):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Test Game", output)
+
+    def test_profile_get_not_found(self):
+        """Test --profile get <appid> when not found."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'get 99999']):
+            with patch('steam_proton_helper.get_launch_profile', return_value=None):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("No profile found", output)
+
+    def test_profile_get_no_appid(self):
+        """Test --profile get without appid."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'get']):
+            with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                result = main()
+                output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Usage", output)
+
+    def test_profile_set_success(self):
+        """Test --profile set <appid>."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'set 12345', '--profile-gamemode']):
+            with patch('steam_proton_helper.get_launch_profile', return_value=None):
+                with patch('steam_proton_helper.set_launch_profile', return_value=True):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Profile saved", output)
+
+    def test_profile_set_failure(self):
+        """Test --profile set <appid> failure."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'set 12345']):
+            with patch('steam_proton_helper.get_launch_profile', return_value=None):
+                with patch('steam_proton_helper.set_launch_profile', return_value=False):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Failed to save", output)
+
+    def test_profile_delete_success(self):
+        """Test --profile delete <appid>."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'delete 12345']):
+            with patch('steam_proton_helper.delete_launch_profile', return_value=True):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Profile deleted", output)
+
+    def test_profile_delete_not_found(self):
+        """Test --profile delete <appid> not found."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'delete 99999']):
+            with patch('steam_proton_helper.delete_launch_profile', return_value=False):
+                with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                    result = main()
+                    output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("No profile found", output)
+
+    def test_profile_unknown_action(self):
+        """Test --profile with unknown action."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--profile', 'invalid']):
+            with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                result = main()
+                output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        self.assertIn("Unknown profile action", output)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

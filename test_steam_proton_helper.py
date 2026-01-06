@@ -4744,5 +4744,255 @@ class TestCLIRemoveProtonBranches(unittest.TestCase):
         self.assertEqual(result, 1)
 
 
+# =============================================================================
+# Additional Coverage Tests
+# =============================================================================
+
+class TestRootCompatToolsPath(unittest.TestCase):
+    """Tests for root compatibilitytools.d path addition (lines 416-417)."""
+
+    @patch('os.path.isdir')
+    @patch('os.path.exists')
+    @patch('glob.glob')
+    def test_find_proton_adds_root_compat_path(self, mock_glob, mock_exists, mock_isdir):
+        """Test that root compatibilitytools.d is added to search patterns."""
+        from steam_proton_helper import find_proton_installations
+
+        mock_isdir.return_value = False
+        mock_exists.return_value = False
+        mock_glob.return_value = []
+
+        # Call with a steam root that differs from compatibilitytools.d
+        result = find_proton_installations('/home/user/.steam/steam')
+
+        # Should have searched root compat dir
+        self.assertEqual(result, [])
+
+
+class TestNoProtonInstallationsWarning(unittest.TestCase):
+    """Tests for no Proton installations warning (line 709)."""
+
+    def test_dependency_checker_no_proton_warning(self):
+        """Test DependencyChecker warns when no Proton found."""
+        from steam_proton_helper import DependencyChecker, CheckStatus
+
+        checker = DependencyChecker('ubuntu', 'apt')
+
+        with patch('steam_proton_helper.find_proton_installations', return_value=[]):
+            with patch('steam_proton_helper.find_steam_root', return_value='/fake/steam'):
+                checks = checker.check_proton()
+
+        # Should have a warning about no Proton
+        proton_check = next((c for c in checks if c.name == 'Proton'), None)
+        self.assertIsNotNone(proton_check)
+        self.assertEqual(proton_check.status, CheckStatus.WARNING)
+        self.assertIn('No Proton', proton_check.message)
+
+
+class TestSearchSteamGamesException(unittest.TestCase):
+    """Tests for search_steam_games exception handling (lines 1331-1332)."""
+
+    @patch('urllib.request.urlopen')
+    def test_search_steam_games_url_error(self, mock_urlopen):
+        """Test search_steam_games handles URLError."""
+        import urllib.error
+        from steam_proton_helper import search_steam_games
+
+        mock_urlopen.side_effect = urllib.error.URLError("Network error")
+
+        result = search_steam_games("test game")
+
+        self.assertEqual(result, [])
+
+    @patch('urllib.request.urlopen')
+    def test_search_steam_games_json_error(self, mock_urlopen):
+        """Test search_steam_games handles JSONDecodeError."""
+        from steam_proton_helper import search_steam_games
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'invalid json{'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        result = search_steam_games("test game")
+
+        self.assertEqual(result, [])
+
+
+class TestProtonDBTierOutput(unittest.TestCase):
+    """Tests for ProtonDB best/trending tier output (lines 1943-1948)."""
+
+    def test_print_protondb_info_with_best_tier(self):
+        """Test print_protondb_info shows best reported tier."""
+        import io
+        from steam_proton_helper import print_protondb_info, ProtonDBInfo
+
+        info = ProtonDBInfo(
+            app_id='12345',
+            tier='gold',
+            score=0.85,
+            total_reports=100,
+            confidence='high',
+            best_reported_tier='platinum',  # Different from tier
+            trending_tier=None
+        )
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            print_protondb_info(info, use_color=False)
+            output = mock_stdout.getvalue()
+
+        self.assertIn('Best Reported', output)
+        self.assertIn('PLATINUM', output)
+
+    def test_print_protondb_info_with_trending_tier(self):
+        """Test print_protondb_info shows trending tier."""
+        import io
+        from steam_proton_helper import print_protondb_info, ProtonDBInfo
+
+        info = ProtonDBInfo(
+            app_id='12345',
+            tier='silver',
+            score=0.70,
+            total_reports=50,
+            confidence='medium',
+            best_reported_tier=None,
+            trending_tier='gold'  # Different from tier
+        )
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            print_protondb_info(info, use_color=False)
+            output = mock_stdout.getvalue()
+
+        self.assertIn('Trending', output)
+        self.assertIn('GOLD', output)
+
+
+class TestVerboseDetailsOutput(unittest.TestCase):
+    """Tests for fix command and verbose details output (lines 2049-2053)."""
+
+    def test_print_checks_with_fix_command(self):
+        """Test print_checks_by_category shows fix_command."""
+        import io
+        from steam_proton_helper import print_checks_by_category, DependencyCheck, CheckStatus
+
+        # Must use a category in category_order: System, Steam, Proton, Graphics, 32-bit
+        checks = [
+            DependencyCheck(
+                name="Test Check",
+                status=CheckStatus.WARNING,
+                message="Test warning",
+                category="System",  # Use predefined category
+                fix_command="sudo apt install testpkg"
+            )
+        ]
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            print_checks_by_category(checks, verbose=False)
+            output = mock_stdout.getvalue()
+
+        self.assertIn('Fix:', output)
+        self.assertIn('sudo apt install testpkg', output)
+
+    def test_print_checks_verbose_with_details(self):
+        """Test print_checks_by_category shows details in verbose mode."""
+        import io
+        from steam_proton_helper import print_checks_by_category, DependencyCheck, CheckStatus
+
+        # Must use a category in category_order: System, Steam, Proton, Graphics, 32-bit
+        checks = [
+            DependencyCheck(
+                name="Test Check",
+                status=CheckStatus.PASS,
+                message="Test passed",
+                category="System",  # Use predefined category
+                details="Line 1 detail\nLine 2 detail"
+            )
+        ]
+
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            print_checks_by_category(checks, verbose=True)
+            output = mock_stdout.getvalue()
+
+        self.assertIn('Line 1 detail', output)
+        self.assertIn('Line 2 detail', output)
+
+
+class TestSearchCLIException(unittest.TestCase):
+    """Tests for --search exception handling (lines 2715-2717)."""
+
+    def test_search_cli_exception(self):
+        """Test CLI --search exception handling."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--search', 'TestGame']):
+            with patch('steam_proton_helper.search_steam_games') as mock_search:
+                mock_search.side_effect = Exception("API error")
+                with patch('sys.stdout', new_callable=io.StringIO):
+                    with patch('sys.stderr', new_callable=io.StringIO):
+                        result = main()
+
+        self.assertEqual(result, 1)
+
+
+class TestRemoveProtonKeyboardInterrupt(unittest.TestCase):
+    """Tests for remove KeyboardInterrupt (lines 2904-2906)."""
+
+    def test_remove_proton_cli_keyboard_interrupt(self):
+        """Test CLI --remove-proton KeyboardInterrupt handling."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--remove-proton', 'TestVersion']):
+            with patch('steam_proton_helper.remove_ge_proton') as mock_remove:
+                mock_remove.side_effect = KeyboardInterrupt()
+                with patch('sys.stdout', new_callable=io.StringIO):
+                    result = main()
+
+        self.assertEqual(result, 130)
+
+
+class TestGameFetchException(unittest.TestCase):
+    """Tests for --game fetch exception (lines 3009-3010)."""
+
+    def test_game_cli_fetch_exception(self):
+        """Test CLI --game handles fetch exception."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--game', '12345']):
+            with patch('steam_proton_helper.resolve_game_input') as mock_resolve:
+                mock_resolve.return_value = ('12345', 'Test Game', [])
+                with patch('steam_proton_helper.fetch_protondb_info') as mock_fetch:
+                    mock_fetch.side_effect = Exception("Fetch failed")
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        # Exception causes return code 1 (lines 3009-3010 add to errors list)
+        self.assertEqual(result, 1)
+
+
+class TestListProtonNoSteam(unittest.TestCase):
+    """Tests for --list-proton when Steam not found (line 2727)."""
+
+    def test_list_proton_no_steam_json(self):
+        """Test CLI --list-proton JSON output when Steam not found."""
+        import io
+        from steam_proton_helper import main
+
+        with patch('sys.argv', ['steam-proton-helper', '--list-proton', '--json']):
+            with patch('steam_proton_helper.detect_steam_variant', return_value=(None, "Not found")):
+                with patch('steam_proton_helper.find_steam_root', return_value=None):
+                    with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                        result = main()
+                        output = mock_stdout.getvalue()
+
+        self.assertEqual(result, 1)
+        data = json.loads(output)
+        self.assertIn('error', data)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

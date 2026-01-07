@@ -1341,16 +1341,24 @@ class TestJSONOutput(unittest.TestCase):
     @patch('builtins.print')
     def test_output_json_valid(self, mock_print):
         """Test that JSON output is valid JSON"""
-        checks = [
-            DependencyCheck("Test1", CheckStatus.PASS, "OK", "System"),
-            DependencyCheck("Test2", CheckStatus.FAIL, "Error", "Graphics"),
-        ]
+        # Disable verbose logging to avoid debug output interfering with test
+        import steam_proton_helper
+        original_enabled = steam_proton_helper.verbose_log.enabled
+        steam_proton_helper.verbose_log.enabled = False
 
-        output_json(checks, "Ubuntu", "apt")
+        try:
+            checks = [
+                DependencyCheck("Test1", CheckStatus.PASS, "OK", "System"),
+                DependencyCheck("Test2", CheckStatus.FAIL, "Error", "Graphics"),
+            ]
 
-        # Get the printed JSON
-        mock_print.assert_called_once()
-        json_str = mock_print.call_args[0][0]
+            output_json(checks, "Ubuntu", "apt")
+
+            # Get the printed JSON (should be exactly one call with verbose logging disabled)
+            mock_print.assert_called_once()
+            json_str = mock_print.call_args[0][0]
+        finally:
+            steam_proton_helper.verbose_log.enabled = original_enabled
 
         # Should be valid JSON
         data = json.loads(json_str)

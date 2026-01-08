@@ -72,7 +72,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Steam Proton Helper")
-    app.setApplicationVersion("2.3.2")
+    app.setApplicationVersion("2.3.3")
     app.setOrganizationName("AreteDriver")
 
     # Set application style

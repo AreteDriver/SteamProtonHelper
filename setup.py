@@ -13,7 +13,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='steam-proton-helper',
-    version='2.3.2',
+    version='2.3.3',
     description='A comprehensive Linux tool to help setup Steam and Proton for gaming',
     long_description=long_description,
     long_description_content_type='text/markdown',

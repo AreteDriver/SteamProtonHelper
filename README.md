@@ -108,24 +108,61 @@ python3 steam_proton_helper.py
 ## CLI Options
 
 ```
-usage: steam_proton_helper.py [-h] [--json] [--no-color] [--verbose] [--fix [FILE]] [--apply] [--dry-run] [--yes] [--game NAME] [--search QUERY]
+usage: steam_proton_helper.py [-h] [--version] [--json] [--no-color] [--verbose]
+                              [--fix [FILE]] [--apply] [--dry-run] [--yes]
+                              [--game NAME] [--search QUERY] [--list-proton]
+                              [--install-proton VERSION] [--force]
+                              [--remove-proton VERSION] [--update-proton]
+                              [--check-updates] [--recommend GAME] [--list-games]
+                              [--profile [ACTION]] [--profile-proton VERSION]
+                              [--profile-options OPTIONS] [--profile-mangohud]
+                              [--profile-gamemode] [--shader-cache [ACTION]]
+                              [--compatdata [ACTION]] [--backup-dir DIR]
+                              [--perf-tools] [--logs [TYPE]] [--log-lines N]
 
 Steam Proton Helper - Check system readiness for Steam gaming on Linux.
 
-options:
-  -h, --help       show this help message and exit
-  --json           Output results as machine-readable JSON
-  --no-color       Disable ANSI color codes in output
-  --verbose, -v    Show verbose/debug output including paths tried
-  --fix [FILE]     Generate a shell script with fix commands (stdout or file)
-  --apply          Auto-install missing packages (prompts for confirmation)
-  --dry-run        Show what --apply would install without executing
-  --yes, -y        Skip confirmation prompt (use with --apply)
-  --game NAME      Check ProtonDB compatibility by game name or AppID
-  --search QUERY   Search Steam for games (returns AppIDs, no ProtonDB lookup)
-  --list-proton    List all detected Proton installations
+Core Options:
+  -h, --help            Show this help message and exit
+  --version, -V         Show program's version number and exit
+  --json                Output results as machine-readable JSON
+  --no-color            Disable ANSI color codes in output
+  --verbose, -v         Show verbose/debug output including paths tried
+
+Fix & Install:
+  --fix [FILE]          Generate a shell script with fix commands (stdout or file)
+  --apply               Auto-install missing packages (prompts for confirmation)
+  --dry-run             Show what --apply would install without executing
+  --yes, -y             Skip confirmation prompt (use with --apply)
+
+ProtonDB & Game Search:
+  --game NAME           Check ProtonDB compatibility by game name or AppID
+  --search QUERY        Search Steam for games (returns AppIDs, no ProtonDB lookup)
+  --recommend GAME      Recommend best Proton version based on ProtonDB reports
+  --list-games          List installed Steam games with their Proton versions
+
+Proton Management:
+  --list-proton         List all detected Proton installations
   --install-proton VERSION  Install GE-Proton (use "latest" or "list")
-  --force          Force reinstall if already installed
+  --remove-proton VERSION   Remove a custom Proton version
+  --update-proton       Update all GE-Proton versions to latest
+  --check-updates       Check if newer GE-Proton versions are available
+  --force               Force reinstall if already installed
+
+Game Profiles:
+  --profile [ACTION]    Manage launch profiles: list, get, set, delete
+  --profile-proton VERSION   Proton version for profile
+  --profile-options OPTIONS  Launch options for profile
+  --profile-mangohud    Enable MangoHud for profile
+  --profile-gamemode    Enable GameMode for profile
+
+Maintenance:
+  --shader-cache [ACTION]    Manage shader caches: list, clear <appid|all>
+  --compatdata [ACTION]      Manage Wine prefixes: list, backup, restore, backups
+  --backup-dir DIR           Directory for compatdata backups
+  --perf-tools               Check status of gaming performance tools
+  --logs [TYPE]              View logs: all, errors, steam, proton, dxvk
+  --log-lines N              Number of log entries to show (default: 50)
 ```
 
 ### Examples
@@ -444,7 +481,7 @@ sudo pacman -S --noconfirm lib32-glibc lib32-gcc-libs
 ### Script won't run
 ```bash
 # Check Python version
-python3 --version  # Requires 3.6+
+python3 --version  # Requires 3.8+
 
 # Make executable
 chmod +x steam_proton_helper.py
@@ -603,6 +640,128 @@ PROTON_USE_WINED3D=1 %command%
 | `MANGOHUD` | 0/1 | Enable MangoHud overlay |
 | `WINE_FULLSCREEN_FSR` | 0/1 | Enable AMD FSR upscaling |
 | `WINE_FULLSCREEN_FSR_STRENGTH` | 0-5 | FSR sharpening (0=max, 5=min) |
+
+## Advanced Features (v2.3+)
+
+### Game Launch Profiles
+
+Create per-game launch profiles to store Proton versions and launch options:
+
+```bash
+# List all saved profiles
+./steam_proton_helper.py --profile list
+
+# Get profile for a specific game
+./steam_proton_helper.py --profile get 1245620
+
+# Set a profile with Proton version and options
+./steam_proton_helper.py --profile set 1245620 \
+  --profile-proton "GE-Proton9-22" \
+  --profile-options "DXVK_ASYNC=1 %command%" \
+  --profile-mangohud --profile-gamemode
+
+# Delete a profile
+./steam_proton_helper.py --profile delete 1245620
+```
+
+Profiles are stored in `~/.config/steam-proton-helper/profiles.json`.
+
+### Shader Cache Management
+
+Manage GPU shader caches to free disk space or fix shader-related issues:
+
+```bash
+# List shader caches with sizes
+./steam_proton_helper.py --shader-cache list
+
+# Clear shader cache for a specific game
+./steam_proton_helper.py --shader-cache clear 1245620
+
+# Clear all shader caches (use with caution)
+./steam_proton_helper.py --shader-cache clear all
+```
+
+Supports both AMD (mesa) and NVIDIA shader cache locations.
+
+### Compatdata (Wine Prefix) Backup & Restore
+
+Backup and restore game Wine prefixes to preserve saves and settings:
+
+```bash
+# List all compatdata directories with sizes
+./steam_proton_helper.py --compatdata list
+
+# Backup a game's Wine prefix
+./steam_proton_helper.py --compatdata backup 1245620
+
+# List existing backups
+./steam_proton_helper.py --compatdata backups
+
+# Restore from backup
+./steam_proton_helper.py --compatdata restore 1245620
+
+# Use custom backup directory
+./steam_proton_helper.py --compatdata backup 1245620 --backup-dir /mnt/backup/steam
+```
+
+Backups are compressed with gzip and stored in `~/.local/share/steam-proton-helper/backups/` by default.
+
+### Installed Games List
+
+View all installed Steam games and their configured Proton versions:
+
+```bash
+# List installed games
+./steam_proton_helper.py --list-games
+
+# JSON output for scripting
+./steam_proton_helper.py --list-games --json
+```
+
+Parses ACF manifest files to detect installed games across all Steam libraries.
+
+### Performance Tools Status
+
+Check if gaming performance tools are installed and available:
+
+```bash
+# Check performance tools
+./steam_proton_helper.py --perf-tools
+```
+
+Checks for: GameMode, MangoHud, vkBasalt, libstrangle, and OBS Game Capture.
+
+### Log Viewer
+
+View and filter Steam/Proton logs for troubleshooting:
+
+```bash
+# View all recent log entries
+./steam_proton_helper.py --logs
+
+# View only errors
+./steam_proton_helper.py --logs errors
+
+# View specific log type
+./steam_proton_helper.py --logs steam
+./steam_proton_helper.py --logs proton
+./steam_proton_helper.py --logs dxvk
+
+# Limit number of entries
+./steam_proton_helper.py --logs errors --log-lines 100
+```
+
+### Proton Version Recommendations
+
+Get Proton version recommendations based on ProtonDB reports:
+
+```bash
+# Get recommended Proton for a game
+./steam_proton_helper.py --recommend "elden ring"
+./steam_proton_helper.py --recommend 1245620
+```
+
+Analyzes ProtonDB reports to suggest the most successful Proton versions for each game.
 
 ## Resources
 

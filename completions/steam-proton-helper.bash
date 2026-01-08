@@ -8,17 +8,17 @@ _steam_proton_helper() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     # All available options
-    opts="--help --version --json --no-color --verbose --fix --apply --dry-run --yes --game --search --list-proton --install-proton --remove-proton --check-updates --update-proton --force -h -V -v -y"
+    opts="--help --version --json --no-color --verbose --fix --apply --dry-run --yes --game --search --list-proton --install-proton --remove-proton --check-updates --update-proton --force --recommend --list-games --profile --profile-proton --profile-options --profile-mangohud --profile-gamemode --shader-cache --compatdata --backup-dir --perf-tools --logs --log-lines -h -V -v -y"
 
     # Handle options that take arguments
     case "${prev}" in
-        --fix)
-            # Complete with filenames for --fix
+        --fix|--backup-dir)
+            # Complete with filenames/directories
             COMPREPLY=( $(compgen -f -- "${cur}") )
             return 0
             ;;
-        --game|--search)
-            # No completion for game name/AppID - user must enter it
+        --game|--search|--recommend|--profile-proton|--profile-options|--log-lines)
+            # No completion - user must enter value
             return 0
             ;;
         --install-proton)
@@ -31,6 +31,26 @@ _steam_proton_helper() {
             COMPREPLY=( $(compgen -W "list" -- "${cur}") )
             return 0
             ;;
+        --profile)
+            # Profile actions
+            COMPREPLY=( $(compgen -W "list get set delete" -- "${cur}") )
+            return 0
+            ;;
+        --shader-cache)
+            # Shader cache actions
+            COMPREPLY=( $(compgen -W "list clear" -- "${cur}") )
+            return 0
+            ;;
+        --compatdata)
+            # Compatdata actions
+            COMPREPLY=( $(compgen -W "list backup restore backups" -- "${cur}") )
+            return 0
+            ;;
+        --logs)
+            # Log types
+            COMPREPLY=( $(compgen -W "all errors steam proton dxvk" -- "${cur}") )
+            return 0
+            ;;
     esac
 
     # Complete options
@@ -39,7 +59,7 @@ _steam_proton_helper() {
         return 0
     fi
 
-    # Default to filename completion for --fix argument
+    # Default to filename completion
     COMPREPLY=( $(compgen -f -- "${cur}") )
 }
 

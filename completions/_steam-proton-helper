@@ -23,6 +23,19 @@ _steam-proton-helper() {
         '--check-updates[Check if newer GE-Proton versions are available]'
         '--update-proton[Update to the latest GE-Proton version]'
         '--force[Force reinstall if already installed]'
+        '--recommend[Recommend Proton version for a game]:game:'
+        '--list-games[List installed Steam games with Proton versions]'
+        '--profile[Manage launch profiles]:action:(list get set delete)'
+        '--profile-proton[Proton version for profile]:version:'
+        '--profile-options[Launch options for profile]:options:'
+        '--profile-mangohud[Enable MangoHud for profile]'
+        '--profile-gamemode[Enable GameMode for profile]'
+        '--shader-cache[Manage shader caches]:action:(list clear)'
+        '--compatdata[Manage Wine prefixes]:action:(list backup restore backups)'
+        '--backup-dir[Directory for compatdata backups]:directory:_directories'
+        '--perf-tools[Check status of performance tools]'
+        '--logs[View Steam/Proton logs]:type:(all errors steam proton dxvk)'
+        '--log-lines[Number of log entries to show]:count:'
     )
 
     _arguments -s -S $opts
